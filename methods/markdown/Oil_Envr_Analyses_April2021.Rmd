@@ -1,0 +1,494 @@
+---
+title: "Oil_Envr_Analyses"
+author: "KCF et al."
+date: "3/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+
+Do we observe evidence for spatially explicit selection on the percent of fatty acids in oil in wild sunflowers? To answer this question we'll use the Qst-Fst approach.
+
+## Quantiative Genetic Work
+
+A classic test of evidence for selection on a trait is to perform a Qst-Fst analysis. If the value of the structure of the quantitative trait is larger than the genetic structure, there is evidence of selection on the trait. This test is ideally performed from a set of individuals where the additive genetic variance (Va) can be partitioned from the other variance. Typically a pedigree or an estimate of relatedness is required to estimate the Va, in this case, the breeding design prevents us from estimating the Va from a pedigree or using an animal model with a kinship matrix. The only genetic correction I can get at is to use a population tree to estimate relatedness among the populations, and use the pairwise matrix of genetic  identity to parameterize the covariance matrix of the random effect of family nested within deme. The results may not be any better than the basic model without the covariance matrix set.
+
+I'll do both and see if I prefer one solution to the other. 
+
+### Breeding Values.
+
+The breeding values are the measure of an invidiual as judged by the mean values of their offspring in comparison to the population mean (Falconer & Mackey, 1996). The breeding value (BV) equals 2 * (mean_offspring - population_mean). In my case, the mean value of the offspring was recorded and is reported as a row in the data table. I.e. each row is the mean value of all of the offspring for a particular mother, with the fathers radomly selected from within a population. 
+
+Here, I have estimated breeding values by comparing the mean offspring value to the value from the entire study (all populations). I could estimate values from within each of the 14 populations, and this may be what I need to do. But for now, I'll keep it the way I have it.
+
+```{R}
+# Read in the data
+dat0 <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# Read in the blocking effects
+block <- read.table("~/Dropbox/oil_envr/data/block_effects/blocks.txt",T,'\t')
+
+# Add the blocking effects
+dat <- merge(dat0, block, by = "ind_code")
+
+# Calculate the breeding values
+bv <- dat %>%
+  mutate(bv_sat = 2*(sat - mean(sat))) %>%
+  select(-Pal, -Ste, -ol, -lin, -sat, -unsat)
+```
+
+#### Explore the breeding values
+
+##### BV ~ Genotype
+
+Make a plot that shows the breeding value compared to each genotype (AA, Aa, aa). This will show you the neutral vs. dominance, vs. additive effects of the SNPs. This analysis doesn't really answer a question (yet), it's just an interesting plot I can make with the data.
+
+These figs are interesting but don't help us in anyway I can think of. Moving along.
+
+```{R}
+# Read in the snps as diploid, biallelic data
+snps <- read.table("/Users/kf/Dropbox/oil_envr/data/snps/snps.custom.genpop.txt",T,'\t')
+
+# Set each genotype as a factor with three levels
+snps <- as.factor(snps)
+
+# Merge the breeding values with the snps
+dat1 <- merge(bv, snps, by = "ind_code")
+
+# plot one bv ~ genotype
+boxplot(dat1$bv_sat ~ dat1$S20)
+
+
+```
+
+### Qst Estimate
+
+First, estimate Qst without the population correction:
+
+```{R}
+# Estimate the model with a population and individual effect for
+# between and within populations
+pop_mod1 <- brm(sat ~ 1 + (1|pop_code/ind_code),
+                data = dat,
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+get_variables(pop_mod1)
+
+# This seems reasonable based on the notion that each family is a population.
+# pollen were collected from population and bred to a single female.
+# This seems to work
+names(dat)[29] <- "family"
+pop_mod2 <- brm(sat ~ 1 + block + (1|deme/family),
+                data = dat,
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+# pull out the posterior sample and square them.
+# These are the variance components for deme and family
+out <- pop_mod2 %>%
+  posterior_samples(.vars=2:3, .funs=funs(.^2))
+
+# Calculate Pst from the correct variance components.
+qst = out$sd_deme__Intercept / 
+  (out$sd_deme__Intercept + 2 * out$`sd_deme:family__Intercept`)  
+
+median_qi(qst)
+#           y      ymin      ymax .width .point .interval
+# 1 0.4285811 0.1089789 0.7239298   0.95 median        qi
+
+```
+
+The Pst estimate is 0.42 (0.11, 0.72) with default values of 1 for c/h2. Now I have to compare that value to the Fst somehow.
+
+#### Va and h2
+
+Calculate the additive genetic variance and the narrow-sense heritability.
+
+```{r}
+# Print out pop_mod2
+pop_mod2
+
+# Then take the estimate of the family sigma (0.99) and multiply by 4
+# to account for the half-sib breeding design
+Va = 4 * 0.99
+Va
+# [1] 3.96
+
+# The narrow sense heritability is the ratio of the additive genetic varaince
+# to the total phenotypic variance
+# Va was identified above
+# Vp is the intercept plus the sigma estimate of the family effects
+Vp = 5.66 + 0.99
+
+h2 = Va / Vp
+h2
+# [1] 0.5954887
+
+```
+
+I'm not sure if the above code is right. This may be right (too). I need help here.
+
+```{r}
+# Extract the variance componenets you want.
+# The componenet that is specific to the family efects is 'sd_deme:family__Intercept'
+var_comp <- pop_mod2 %>%
+  posterior_samples(.vars=2:3, .funs=funs(.^2)) %>%
+  select("b_Intercept", "sd_deme__Intercept", 
+         "sd_deme:family__Intercept", "sigma")
+
+# Take the estimate of the family effects and multiply by 4
+# to account for the half sib design
+Va = 4 * var_comp[,"sd_deme:family__Intercept"]
+
+# Take a look at the estimate and summary
+summary(Va)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  1.671   3.364   3.908   4.042   4.559  10.878 
+
+# Now estimate the narrow sense heritbility
+Vp = (var_comp$b_Intercept + var_comp$sd_deme__Intercept +
+        var_comp$`sd_deme:family__Intercept` + 
+        var_comp$sigma)
+h2 = Va / Vp
+
+summary(h2)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1435  0.3569  0.4265  0.4396  0.5066  1.1144 
+
+```
+
+I think this is right, but not 100%
+
+## Animal Model
+
+It's possible for me to get the additive genetic variance of these data if I subset to just the individuals that I have snp data for. I have SNP data for 140 individuals list here `dat[dat$ind_code %in% inds.snps, "ind_code"] %>% sort()`. I have SNP data for individuals from each of the 14 USDA populations, i.e. I have a representative set of SNP data for the mothers. I can subset the trait data to just those individuals for the Quantitative genetics work, and bring in the rest of the data for regressions. Getting the additive genetics will allow me to estimate Qst appropriately and look at the variation of the additive genetics. It will also give me the chance to play around with this kind of data & analyses.
+
+step 1. subset genotypes
+step 2. build a relatedness matrix from the SNPs
+step 3. Build an animal model
+step 4. predict and validate data from the animal model
+step 5. estimate Qst
+
+#### Read in the data
+
+```{r}
+# Read in the trait data
+dat <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# Read in the snps as diploid, biallelic data
+snps <- read.table("/Users/kf/Dropbox/oil_envr/data/snps/snps.custom.genpop.txt",T,'\t')
+
+# Set each genotype as a factor with three levels
+snps <- as.factor(snps)
+
+```
+
+View the overlap of genotypes with trait data.
+
+```{R}
+l <- list(snps$ind_code, dat$ind_code)
+names(l) <- c("genotypes", "traits")
+overlap <- gplots::venn(l)
+plot(overlap)
+```
+
+There are 140 individuals with trait and sequence data, 146 with only sequence data, and 13 with only trait data.
+
+### Subset individuals
+
+We have genotype data for 286 individuals and trait data for 153, and 140 inds have both snps and trait data. Subset genotypes and phenotypes for the common set.
+
+```{R}
+# List of inds to keep
+keep <- attr(overlap,"intersections")$`genotypes:traits`
+
+# Filter for snps
+snps1 <- snps %>% 
+  filter(ind_code %in% keep) %>%
+  arrange(ind_code)
+
+# filter for phenotypes
+dat1 <- dat %>% 
+  filter(ind_code %in% keep) %>%
+  arrange(ind_code)
+
+```
+
+#### Build a relatedness matrix
+
+Build a kinship matrix using the `Gmatrix` function from AGHmatrix. For details see `https://pubmed.ncbi.nlm.nih.gov/27902800/`. The first issue is filter the SNPs for the sites under selection according to McAseey. The Fst statistic is ideally built from neutral sites. Since, Ed already conducted an analyses with the SNPs to identify sites under selection, we should remove the 8 sites that show evidence of selection. See McAssey et al. 2016 for more details on the selection scan.
+
+The second issue is I need to convert the data from it's current format to 0, 1, 2, which is what Gmatrix expects. This can be done with tidyverse.
+
+```{r}
+# SNPs under selection to remove.
+## It's not clear how to connect the results from McAssey to 
+## the locus names as I have them.
+## I attempted to find the loci with the HA genome browswer to no avail.
+
+## For now, just use all the snps. 
+## If you don't get significance from the Qst-Fst differences, you can
+## talk to ed and see if he can help you figure out which 8 loci to 
+## remove. Otherwise, continue
+
+# Convert the genotypes into 012 format
+snps_agh <- snps1 %>%
+  select(-ind_code) %>%
+  mutate_all(
+    funs(case_when(
+      . == 11 ~ 0,
+      . == 12 ~ 1,
+      . == 21 ~ 1,
+      . == 22 ~ 2
+    ))
+  )
+  
+
+# Replace missing sites with -9
+snps_agh[is.na(snps_agh)] <- -9
+
+```
+
+I'll compute the genomic relatedness matrix based on VanRaden (2009) (which seems to be more popular - not sure why yet). Figure out how this works. 
+
+```{r}
+library(AGHmatrix)
+
+# Computing the additive relationship matrix based on VanRaden 2008
+G <- Gmatrix(SNPmatrix = as.matrix(snps_agh), missingValue=-9, 
+                  maf=0.05, method="VanRaden")
+
+# Set the row names 
+row.names(G) <- snps1$ind_code
+
+# View the kinship matrix & save it
+# The names need fixing up, (or turn them off & use population labels.)
+heatmap(G)
+
+# View a histogram of the self-variance components (the diagonal)
+h0 <- ggplot(data.frame(V1=diag(G)), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Self-variances of A")
+
+# View a histogram of the variance estimates.
+h1 <- ggplot(data.frame(V1=kinship[upper.tri(G)]), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Covariances of A")
+
+# Absolute value of covariance estimates
+h2 <- ggplot(data.frame(V1=abs(kinship[upper.tri(G)])), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Absolute value of covariances of A")
+
+# plot them together & save
+pout <- cowplot::plot_grid(h0, h1, h2, ncol = 1, nrow = 3)
+
+setwd("/Users/kf/Dropbox/oil_envr/results/kinship/figs")
+cowplot::save_plot(
+  filename = "Variance-Covariance_histograms_N140_v1.pdf",
+  plot = pout,
+  ncol = 1,
+  nrow = 1,
+  base_height = 6,
+  base_asp = 0.55,
+  base_width = NULL
+  )
+
+# Combine the kinship matrix and the histograms into a single plot.
+# You'll need to remake the kinship matrix with a ggplot2 function to combine
+p0 <- cowplot::as_grob(gplots::heatmap.2(kinship, dendrogram = 'none', 
+                        Rowv=TRUE, Colv=TRUE, trace='none',
+                        key = FALSE))
+
+
+# I think I need to make it in ggplot2 in order for it to work...
+# This is relatively unimportant, work on it later
+p00 <- ggplot2()
+
+
+```
+
+#### Fit the animal model
+
+Now I can fit the animal model. Here are descriptions of the various model components.
+
+
+
+```{r}
+library(brms)
+
+pop_mod3 <- brm(sat ~ 1 + block + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+# Pull out the posterior sample and square them.
+# These are the variance components 
+out <- pop_mod3 %>%
+  posterior_samples(.vars=2:4, .funs=funs(.^2))
+
+# Calculate Qst from the correct variance components.
+qst = out$b_demesouth / 
+  (out$b_demesouth + 2 * out$sd_ind_code__Intercept)
+
+tidybayes::median_qi(qst)
+
+ggplot(data.frame(Qst=qst), aes(x=Qst))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x=expression(paste(italic(Q)[ST])))
+
+# This is a slightly different model where the effects of deme are a
+# random effect and are a cofactor with the levels of ind_code
+# Still not sure if this is correct
+pop_mod4 <- brm(sat ~ 1 + block + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+```
+
+
+#### Estimate Qst
+
+```{r}
+# Move the Qst stuff here once it's right
+```
+
+### Estimate h2
+
+Narrow-sense heritabiity estimate.
+
+```{r}
+Va = 4 * out$sd_ind_code__Intercept
+Vp = 
+```
+
+
+
+## Fst estimate
+
+Ed previously estimated Fst to be 0.21 using all markers. He also performed an analysis where he identified 8 SNPs that show evidence of selection. I will estimate Fst with all SNPs and with the 8 non-neutral sites removed. I need to find a bayesian method for estimating Weir & Cockerham's Fst.
+
+```{r}
+# Load the SNP data
+
+# Estimate Fst as a two population model with multiple families.
+# In this model deme = population and family = breeding population
+
+
+
+
+```
+
+
+## Compare Qst to Fst
+
+How to do this? I think it's simply a matter of comparing the two values and if they overlap. You can take the different and the 95% CI's of the difference to, if the CI's of the differences don't overlap, you can take that as evidence of support.
+
+
+## Extras
+
+### Relatedness matrix for full snps set
+
+Build a kinship matrix using the `Gmatrix` function from synbreed. For details see `https://pubmed.ncbi.nlm.nih.gov/27902800/`. The first issue is filter the SNPs for the sites under selection according to McAseey. The Fst statistic is ideally built from neutral sites. Since, Ed already conducted an analyses with the SNPs to identify sites under selection, we should remove the 8 sites that show evidence of selection. See McAssey et al. 2016 for more details on the selection scan.
+
+The second issue is I need to convert the data from it's current format to 0, 1, 2, which is what Gmatrix expects. This can be done with tidyverse.
+
+```{r}
+# SNPs under selection to remove.
+## It's not clear how to connect the results from McAssey to 
+## the locus names as I have them.
+## I attempted to find the loci with the HA genome browswer to no avail.
+
+## For now, just use all the snps. 
+## If you don't get significance from the Qst-Fst differences, you can
+## talk to ed and see if he can help you figure out which 8 loci to 
+## remove. Otherwise, continue
+
+# Convert the genotypes into 012 format
+snps_agh <- snps %>%
+  select(-ind_code) %>%
+  mutate_all(
+    funs(case_when(
+      . == 11 ~ 0,
+      . == 12 ~ 1,
+      . == 21 ~ 1,
+      . == 22 ~ 2
+    ))
+  ) %>%
+  
+
+# Replace missing sites with -9
+snps_agh[is.na(snps_agh)] <- -9
+
+```
+
+I'll compute the genomic relatedness matrix based on VanRaden (2009) (which seems to be more popular - not sure why yet).
+
+```{r}
+library(AGHmatrix)
+
+#Computing the additive relationship matrix based on VanRaden 2008
+kinship <- Gmatrix(SNPmatrix = as.matrix(snps_agh), missingValue=-9, 
+                  maf=0.05, method="VanRaden")
+
+# View the kinship matrix & save it
+# The names need fixing up, (or turn them off & use population labels.)
+heatmap(kinship)
+
+# View a histogram of the self-variance components (the diagonal)
+h0 <- ggplot(data.frame(V1=diag(kinship)), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Self-variances of A")
+
+# View a histogram of the variance estimates.
+h1 <- ggplot(data.frame(V1=kinship[upper.tri(kinship)]), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Covariances of A")
+
+# Absolute value of covariance estimates
+h2 <- ggplot(data.frame(V1=abs(kinship[upper.tri(kinship)])), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Absolute value of covariances of A")
+
+# plot them together & save
+pout <- cowplot::plot_grid(h0, h1, p0, h2, ncol = 2, nrow = 2)
+
+setwd("/Users/kf/Dropbox/oil_envr/results/kinship/figs")
+cowplot::save_plot(
+  filename = "Variance-Covariance_histograms_v0.pdf",
+  plot = pout,
+  ncol = 1,
+  nrow = 1,
+  base_height = 4,
+  base_asp = 1.5,
+  base_width = NULL
+  )
+
+# Combine the kinship matrix and the histograms into a single plot.
+# You'll need to remake the kinship matrix with a ggplot2 function to combine
+p0 <- cowplot::as_grob(gplots::heatmap.2(kinship, dendrogram = 'none', 
+                        Rowv=TRUE, Colv=TRUE, trace='none',
+                        key = FALSE))
+
+
+# I think I need to make it in ggplot2 in order for it to work...
+# This is relatively unimportant, work on it later
+p00 <- ggplot2()
+
+
+```

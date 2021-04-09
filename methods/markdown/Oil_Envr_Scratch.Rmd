@@ -1,0 +1,588 @@
+---
+title: "Oil x Envr Analysis Scratch"
+author: "KCF"
+date: "2/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Scratch for the oil x envr analysis. 
+
+I'll turn this into good looking code after I know what I'm doing!
+
+### Get an understanding of the data
+
+The first attempt to get an understanding for trait-environmnetal correlations is to fit a Bayesian model to the data. I'll do this in brms using a gaussian distribution family.
+
+```{r}
+# Load libraries
+library(tidybayes)
+library(brms)
+library(tidyverse)
+library(cowplot)
+```
+
+Read in the data and explore the factors.
+
+```{r}
+# Read in the data and merge the ancestry data into the pheno/envr data
+dat <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# What are the levels of the factors we have?
+table(dat$pop_code)
+table(dat$deme)
+```
+
+There are 15 populations and five regions.
+
+Let's look at the response distributions.
+
+```{r fig.cap="Distribution of oil traits.", echo=F}
+# Responses
+r0 <- ggplot(data = dat, aes(x=Pal)) + geom_histogram()
+r1 <- ggplot(data = dat, aes(x=Ste)) + geom_histogram()
+r2 <- ggplot(data = dat, aes(x=ol)) + geom_histogram()
+r3 <- ggplot(data = dat, aes(x=lin)) + geom_histogram()
+r4 <- ggplot(data = dat, aes(x=sat)) + geom_histogram()
+r5 <- ggplot(data = dat, aes(x=unsat)) + geom_histogram()
+
+plot_grid(r0, r1, r2, r3, r4, r5, ncol = 3, nrow = 2)
+```
+
+It looks like a lot of the variation in the percent saturatted fatty acids is driven by variation of Pal.
+
+And let's take a look at all of the predictor distributions.
+
+```{r fig.cap = "Distribution of 19 bioclim variables", echo = F}
+# Predictors
+p0  <- ggplot(data = dat, aes(x=bio1 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p1  <- ggplot(data = dat, aes(x=bio2 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p2  <- ggplot(data = dat, aes(x=bio3 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p3  <- ggplot(data = dat, aes(x=bio4 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p4  <- ggplot(data = dat, aes(x=bio5 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p5  <- ggplot(data = dat, aes(x=bio6 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p6  <- ggplot(data = dat, aes(x=bio7 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p7  <- ggplot(data = dat, aes(x=bio8 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p8  <- ggplot(data = dat, aes(x=bio9 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p9  <- ggplot(data = dat, aes(x=bio10)) + geom_histogram() + theme(axis.title.y = element_blank())
+p10 <- ggplot(data = dat, aes(x=bio11)) + geom_histogram() + theme(axis.title.y = element_blank())
+p11 <- ggplot(data = dat, aes(x=bio12)) + geom_histogram() + theme(axis.title.y = element_blank())
+p12 <- ggplot(data = dat, aes(x=bio13)) + geom_histogram() + theme(axis.title.y = element_blank())
+p13 <- ggplot(data = dat, aes(x=bio14)) + geom_histogram() + theme(axis.title.y = element_blank())
+p14 <- ggplot(data = dat, aes(x=bio15)) + geom_histogram() + theme(axis.title.y = element_blank())
+p15 <- ggplot(data = dat, aes(x=bio16)) + geom_histogram() + theme(axis.title.y = element_blank())
+p16 <- ggplot(data = dat, aes(x=bio17)) + geom_histogram() + theme(axis.title.y = element_blank())
+p17 <- ggplot(data = dat, aes(x=bio18)) + geom_histogram() + theme(axis.title.y = element_blank())
+p18 <- ggplot(data = dat, aes(x=bio19)) + geom_histogram() + theme(axis.title.y = element_blank())
+
+plot_grid(p0, p1, p2, p3, p4, p5, 
+          p6, p7, p8, p9, p10, p11,
+          p12, p13, p14, p15, p16, 
+          p17, p18, 
+          ncol = 4, nrow = 5) 
+```
+
+Now that we have a sense for the data, fit a model
+
+## SNP data format
+
+```{R}
+library(dartR)
+setwd("~/Dropbox/oil_envr/data/snps/")
+
+# Read in the GenAlEx file as a genind object
+snps <- poppr::read.genalex("genotypes.csv", genclone = F)
+
+# Verify the format of the data
+radiator::detect_genomic_format(snps)
+
+# Convert genind to genlight
+snps.gl <- gi2gl(snps)
+
+# Convert genlight to plink & write to file
+gl2plink(snps.gl, outfile = "wild_annuus_n286_snps246.plink.csv", outpath = "./")
+
+# Export data in hierfstat format for QstFstComp
+write.table(hierfstat::genind2hierfstat(snps), file="wild_annuus_N286_snps246.hierfstat", quote=F, sep=',')
+
+```
+
+### Ancestry data
+
+The SNP data in the dryad download were sequenced from the parents of the seeds. Each seed was created by pollinating a female from bulked pollen from the population. Since we don't have a connection of the genotype data between parent and seed, the only type of a ancestry correction I can do is assign individuals to a northern or southern deme according to their STRUCTURE result. I'll input this as an ancestry correction and compare the best model without ancestry correction to the model with it.
+
+```{r, eval = F}
+# Read in the Qmatrix for the parents
+k2 <- read.table("~/Dropbox/oil_envr/data/structure/k2.Q",T,'\t')
+
+# Read in the pop_codes
+pop <- read.table("~/Dropbox/oil_envr/data/codes/pop_codes_N286.txt",T,'\t')
+
+# Merge the K2 to the pop_codes
+qdat_tmp <- plyr::join_all(dfs = list(pop, k2))
+
+# Make a vector which assigns inds to North or South
+qdat <- qdat_tmp %>%
+  mutate(deme = if_else(cluster_2 > 0.5, "north", "south")) %>%
+  select(ind_code, pop_code, usda_pop, cluster_2, deme)
+
+# Merge the ancestry correction to the trait data
+out <- left_join(dat, qdat, by = "ind_code") %>%
+  select(-cluster_2, -pop_code.x, -region_code) %>%
+  rename(pop_code = pop_code.y) %>%
+  arrange(., pop_code)
+
+# Write to file
+write.table(out, file="oil_data_with_pop_codes_N153.txt", sep='\t', quote=F, row.names = F)
+```
+
+## Bayesian models
+
+### Basic Moodels
+
+The first mod0 with 2 chains and 4000 iterations worked very well.
+
+```{r eval = FALSE}
+# Read in the data
+dat <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# mod0 is the basic model that has population as a random effect
+mod0 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              lat + lon + 
+              (1|pop_code),
+            data = dat,
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 4000) %>%
+  add_criterion("loo", reloo = TRUE)
+save(mod0, file="mod0.brms")
+
+# You can incorporate simple genetic correction by having a factor
+# representing the two demes present in the data, a Northern vs. Southern deme.
+# This is a crude correction, but possibly bettern than nothing. 
+mod1 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              lat + lon + deme + 
+              (1|pop_code),
+            data = dat,
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 4000) %>%
+  add_criterion("loo", reloo = TRUE)
+save(mod1, file="mod1.brms")
+```
+
+
+
+### Advanced Moodels
+
+The first mod0 with 2 chains and 4000 iterations worked very well. Try to improve on that simple model and tighten down on the Rhat values. First try increasing the run length significantly.
+
+```{r eval = FALSE}
+# Read in the data
+dat <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# mod01 is the basic model that has population as a random effect
+mod01 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              lat + lon + 
+              (1|pop_code),
+            data = dat,
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 50000) %>%
+  add_criterion("loo", reloo = TRUE)
+save(mod01, file="mod01_iter50k.brms")
+
+# mod02. Perhaps the chains are too stable. Increase the number of chains, but decrease the runs.
+mod02 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              lat + lon + 
+              (1|pop_code),
+            data = dat,
+            family = "gaussian",
+            chains = 10L, seed = 2398, iter = 5000) %>%
+  add_criterion("loo", reloo = TRUE)
+save(mod02, file="mod02_10L_iter5k.brms")
+# Over all I think this approach is an improvement.
+# You can see the chains start to stabilize about half-way through the model.
+# Run the model for three or four times as long.
+
+
+
+# Evalute the model
+plot(mod01)
+pp_check(mod01)
+
+
+
+
+# You can incorporate simple genetic correction by having a factor
+# representing the two demes present in the data, a Northern vs. Southern deme.
+# This is a crude correction, but possibly bettern than nothing. 
+mod11 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              lat + lon + deme + 
+              (1|pop_code),
+            data = dat,
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 4000) %>%
+  add_criterion("loo", reloo = TRUE)
+save(mod1, file="mod1.brms")
+
+
+
+
+```
+
+### Bayesian model goodness of fit
+
+I like the approach of assessing models by predicting data from a training set and then determining the goodness of fit from a validation set. I'll do this here with the Bayesian fit.
+
+```{r echo = FALSE}
+load("/media/two_tb_A/Dropbox/oil_envr/results/brms/models/archive/mod0.brms")
+load("/media/two_tb_A/Dropbox/oil_envr/results/brms/models/archive/mod1.brms")
+```
+
+```{r fig.cap="Goodness of fit tests for mod0 (no ancestry correction) and mod1 (ancestry corrected for each deme)."}
+# Take a look at the model run for each model
+plot(mod0)
+plot(mod1)
+
+# Plot the posterior predictive distribtuions to evaluate goodnes of fit.
+pp_interval0 <- pp_check(mod0, type = "intervals") # this one is great for viewing clustering of the data.
+pp_dens0 <- pp_check(mod0, type="dens_overlay") # good for viewing entire distribution 
+pp_interval1 <- pp_check(mod1, type = "intervals")
+pp_dens1 <- pp_check(mod1, type="dens_overlay") 
+
+plot_grid(pp_dens0, pp_interval0,
+          pp_dens1, pp_interval1,
+          ncol = 2, nrow = 2)
+```
+
+Use leave-one-out cross validation to rank both models.
+
+```{r}
+loo_compare(mod0, mod1)
+```
+
+The model including the coarse ancestry correction is better than the model without it. Use that model going forward.
+
+#### Plot all regression coefs
+ 
+Forest plot of the regression coefficients
+
+```{r echo = FALSE}
+# Get a list of terms in the model
+tp <- get_variables(mod1) %>% data.frame()
+
+# Make a plot of the variables you want
+# This one is sorted by the regression estimate value
+fr0 <- mod1 %>% 
+  gather_draws(
+                b_bio1,
+                b_bio2,
+                b_bio3,
+                b_bio4,
+                b_bio5,
+                b_bio6,
+                b_bio7,
+                b_bio8,
+                b_bio9,
+               b_bio10,
+               b_bio11,
+               b_bio12,
+               b_bio13,
+               b_bio14,
+               b_bio15,
+               b_bio16,
+               b_bio17,
+               b_bio18,
+               b_bio19,
+                 b_lat,
+                 b_lon,
+sd_pop_code__Intercept) %>% 
+  median_qi(.width = c(.95, .66)) %>%
+  #arrange(.value) %>%
+  ggplot(aes(y=reorder(.variable, .value), x=.value, xmin = .lower, xmax = .upper)) +
+  theme_classic() + 
+  geom_vline(xintercept=0, color = 'grey80', linetype = "dashed") +
+  geom_pointinterval() +
+  labs(x="Estimate", title = "% Saturated Fatty Acids") + 
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_text(colour = "black"))
+
+plot_grid(fr0, fr1)
+
+
+# This one is sorted by the bioclim variable number
+# I prefer this one, easier to pick out variables 
+# you want to think on, rather than sorting by effect size
+fr1 <- mod1 %>% 
+  gather_draws(
+                b_bio1,
+                b_bio2,
+                b_bio3,
+                b_bio4,
+                b_bio5,
+                b_bio6,
+                b_bio7,
+                b_bio8,
+                b_bio9,
+               b_bio10,
+               b_bio11,
+               b_bio12,
+               b_bio13,
+               b_bio14,
+               b_bio15,
+               b_bio16,
+               b_bio17,
+               b_bio18,
+               b_bio19,
+                 b_lat,
+                 b_lon,
+sd_pop_code__Intercept) %>% 
+  median_qi(.width = c(.95, .66)) %>%
+  ggplot(aes(y=.variable, x=.value, xmin = .lower, xmax = .upper)) +
+  theme_classic() + 
+  geom_vline(xintercept=0, color = 'grey80', linetype = "dashed") +
+  geom_pointinterval() +
+  labs(x="Estimate", title = "Y = % Saturated Fatty Acids") + 
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_text(colour = "black", size=14)) +
+  scale_y_discrete(limits = rev(c("b_bio1","b_bio2","b_bio3","b_bio4","b_bio5",
+                              "b_bio6","b_bio7","b_bio8","b_bio9","b_bio10",
+                              "b_bio11","b_bio12","b_bio13","b_bio14","b_bio15",
+                              "b_bio16","b_bio17","b_bio18","b_bio19",
+                              "b_lat","b_lon", "sd_pop_code__Intercept")),
+                   labels = rev(c("bio1","bio2","bio3","bio4","bio5",
+                              "bio6","bio7","bio8","bio9","bio10",
+                              "bio11","bio12","bio13","bio14","bio15",
+                              "bio16","bio17","bio18","bio19",
+                              "lat","lon","pop_effects")))
+fr1
+```
+
+### Condional effects - main terms.
+
+```{r}
+# Calculate the conditional effects
+ce <- conditional_effects(mod1)
+
+# Plot interesting ones
+bio6.ce <- plot(ce, plot = FALSE)[[6]] + theme_linedraw() + labs(color="", fill="", x= "bio6 - Min. Temperature of Coldest Month")
+bio15.ce <- plot(ce, plot = FALSE)[[15]] + theme_linedraw() + labs(color="", fill="", x="bio15 - Precipitation Seasonality")
+bio17.ce <- plot(ce, plot = FALSE)[[17]] + theme_linedraw() + labs(color="", fill="", x="bio17 - Precipitation of Driest Quarter")
+bio19.ce <- plot(ce, plot = FALSE)[[19]] + theme_linedraw() + labs(color="", fill="", x="bio19 - Precipitation of Coldest Quarter")
+lat.ce <- plot(ce, plot = FALSE)[[20]] + theme_linedraw() + labs(color="", fill="")
+lon.ce <- plot(ce, plot = FALSE)[[21]] + theme_linedraw() + labs(color="", fill="")
+
+plot_grid(bio19.ce, bio17.ce, bio15.ce, bio6.ce, ncol = 2)
+
+
+```
+
+
+### Interactions between terms
+
+Based on the regression coefficients, I think the interactions between bio
+Plot some interactions between terms that you may find interesting.
+
+I think plotting the interaction between bio7 and bio14 would be interesting.
+
+```{r eval = FALSE, echo = FALSE}
+# Interaction term ranges
+cond_DuAR= data.frame(z.AR  = c(0, 0.5, 1.0))
+cond_DlSl= data.frame(z.S_l = c(-1, 0, 1))
+cond_fg  = data.frame(z.gsmax = c(-0.3, 0, 0.3))
+cond_B = data.frame(prop_B = c(0.5, 0.75, 0.87, 1))
+cond_Du = data.frame(z.D_u = c(0, 1, 2))
+
+# Build interaction conditional effects
+me_DlSl <- conditional_effects(mod11, effects = "z.D_l:z.S_l", int_conditions = cond_DlSl)
+me_DuAR <- conditional_effects(mod11, effects = "z.D_u:z.AR",  int_conditions = cond_DuAR)
+me_fsgsmax <- conditional_effects(mod11, effects = "z.fs:z.gsmax", int_conditions = cond_fg)
+me_DlB <- conditional_effects(mod11, effects = "z.D_l:prop_B", int_conditions = cond_B)
+me_SuDu <- conditional_effects(mod11, effects = "z.S_u:z.D_u", int_conditions = cond_Du)
+
+# Build main term conditional effects
+me_Du <- conditional_effects(mod11, effects = "z.D_u")
+me_Dl <- conditional_effects(mod11, effects = "z.D_l")
+me_fs <- conditional_effects(mod11, effects = "z.fs")
+me_Su <- conditional_effects(mod11, effects = "z.S_u")
+
+# Make plots
+pDlSl_r1 <- plot(me_DlSl, plot=F)[[1]]
+pDuAR_r1 <- plot(me_DuAR, plot=F)[[1]]
+pfsgsmax_r1 <- plot(me_fsgsmax, plot=F)[[1]]
+pDlSl_r2 <- plot(me_DlSl, plot=F)[[2]]
+pDlB_r2  <- plot(me_DlB, plot=F)[[2]]
+pSuDu_r2 <- plot(me_SuDu, plot=F)[[2]]
+
+```
+
+### Random Forest Modelling
+
+I'll fit a random forest model here and see if the rankings of variable importance is different.
+
+```{r, fig.cap="Variance expalined by changing the number of variables randomly selected to build each try (mtry). Randomly sampling 8 variables explains the most variance."}
+library(randomForest)
+
+# Subset only the data for the model and 
+# parition into training and validation sets.
+dat1 <- dat %>% select(-ind_code, -pop_code, -region_code, -Pal, -Ste, -ol, -lin, -unsat)
+
+# Randomly sample 70% of the data and send it to the training set.
+set.seed(2398) # if you want this to be identical
+train_selection <- sample(nrow(dat1), 0.7 * nrow(dat1), replace = FALSE)
+train = dat1[train_selection,]
+valid = dat1[-train_selection,]
+
+# Fit the RF model with the training data
+rf0 <- randomForest(sat ~ ., data = train, importance = TRUE)
+
+# Try a range of mtry values that change the number of variables randomly sampled. This will change the % variance the model. It's a model tuning parameter
+rf1 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 2)
+rf2 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 5)
+rf3 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 7)
+rf4 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 8)
+rf5 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 9)
+rf6 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 10)
+rf7 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 11)
+rf8 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 12)
+rf9 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 13)
+rf10 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 15)
+rf11 <- randomForest(sat ~ ., data = train, importance = TRUE, mtry = 20)
+
+# View the change in the variance explained
+ve <- data.frame(mtry = c(2,5,7,8,9,10,11,12,13,15,20),
+        var_explained = c(59.84, 59.75, 60.01, 60.39, 59.53, 59.73, 
+                          59.58, 59.84, 59.65, 59.82, 60.03))
+ggplot(data = ve, aes(x=mtry, y=var_explained)) + geom_line() + geom_point()
+
+```
+
+Now I'll take the best fit and predict data based on the training data set. The predicted and observed data are the reponse, % saturated fatty acid.
+
+```{r fig.cap="Goodness of fit of model 'rf4'. The model is doing fairly well. You can see there is clustering of the predicted data (y-axes) that isn't observed in the real data. This may be due to grouping (random) effects in the data. This is evidence I need to account for clustering in the data. A mixed-effects random forest would do this. However, I'm unconvinced that mixed-effects RF models are a real thing. RF models are non-parametric, and MERF estimate parameters and violate the spirit of the method. It may be better to just stick with the Bayesian ME multiple regression model."}
+
+# Predicting on train set
+predTrain <- predict(rf4, train, type = "class")
+
+# Checking fit of the  accuracy
+# Take the predicted data and the observed data and plot them
+pred_df = data.frame(pred = predTrain, obs = train$sat)
+summary(lm(obs ~ pred, data = pred_df))
+train_data_prediction <- ggplot(data = pred_df,aes(x=obs, y=pred)) + 
+  geom_point() + 
+  geom_smooth(method='lm', formula=y~x) + 
+  ggtitle(label = "Prediction data", subtitle = "R-squared = 0.6901")
+
+# Predict values from the validation set
+predValid <- predict(rf4, valid, type = "class")
+
+# Check the correlation of the validation data to it's predicted values 
+valid_df = data.frame(pred = predValid, obs = valid$sat)
+summary(lm(obs ~ pred, data = valid_df))
+valid_data_prediction <- ggplot(data = valid_df,aes(x=obs, y=pred)) + 
+  geom_point() + 
+  geom_smooth(method='lm', formula=y~x) + 
+  ggtitle(label = "Validation data", subtitle = "R-squared = 0.6369")
+
+plot_grid(train_data_prediction, valid_data_prediction, ncol = 2)
+
+```
+
+We have a sense for how well the model is fitting the data. Let's take a look at the importance values.
+
+```{r}
+importance(rf4)
+varImpPlot(rf4)
+```
+
+I think I now need to fit the model on all the data.
+
+```{r}
+rf4_full <- randomForest(sat ~ ., data = dat1, importance = TRUE, mtry = 8)
+importance(rf4_full)
+varImpPlot(rf4_full)
+```
+
+
+
+## Pst-Fst
+
+A classic test of evidence for selection on a trait is to perform a Qst-Fst analysis. I'll perform one here. I'm not sure of the best methods, as I've never done this before. Let's learn some.
+
+Before going too far, read Gilbert & Whitlok (2015). This is the seminarl text on QstFst analysis.
+
+**Update**
+
+It appears I cannot estimate the additive genetic variance from these data. The SNPs are not from the inds that seed data was collected from, ruling out an animal model. The best I can hope to do is to use the Pst method, with a correction for the estimated effect of additive genetic variance and the narrow sense heritbability.
+
+I'll fit a basic model in brms and then pull out the variance component for population. An additional test that may be a bit better is to set the covariance matrix of the group pop by building first a population tree with the sequence data. This will allow you to better account for covariance in the data and you may get an improved estiamte.
+
+### Pst Estimate
+
+First, estimate Pst without the population correction:
+
+```{R}
+# Estimate the model with a population and individual effect for
+# between and within populations
+pop_mod1 <- brm(sat ~ 1 + (1|pop_code/ind_code),
+                data = dat,
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+get_variables(pop_mod1)
+
+# This seems reasonable based on the notion that each family is a population.
+# pollen were collected from population and bred to a single female.
+# This seems to work
+names(dat)[29] <- "family"
+pop_mod2 <- brm(sat ~ 1 + (1|deme/family),
+                data = dat,
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+
+# pull out the posterior sample and square them.
+# These are the variance components for deme and family
+out <- pop_mod2 %>%
+  posterior_samples(.vars=2:3, .funs=funs(.^2))
+
+# Calculate Pst from the correct variance components.
+pst = out$sd_deme__Intercept / 
+  (out$sd_deme__Intercept + 2 * out$`sd_deme:family__Intercept`)  
+
+median_qi(pst)
+#           y      ymin      ymax .width .point .interval
+# 1 0.4285811 0.1089789 0.7239298   0.95 median        qi
+
+```
+
+The Pst estimate is 0.42 (0.11, 0.72) with default values of 1 for c/h2. Now I have to compare that value to the Fst somehow.
+
+### Pst pop. corrected estimate
+
+Now estmate Pst and correct for non-independence among the individuals. This is the best you can hope for to account for the non-independence. First you'll have to estimate the population tree, then use the tree as a NJ tree in the model.
+
+```{R}
+
+
+
+```
+
+## Compare Pst to Fst
+
+How to do this?

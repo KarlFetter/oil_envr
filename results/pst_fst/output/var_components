@@ -1,0 +1,25 @@
+# These data are the estimates of the highest density continuous intervale & median of the variance componenets
+# The within = family (or the population that the father's pollen came from)
+# between = populaiton, or the genetic demes of the data
+#
+# 02/22/21
+# KCF 
+group	component	hdci	median	
+within	r_deme:family[south_TX5,Intercept]	1.127734	6.264576e-09	
+within	r_deme:family[south_TX4,Intercept]	3.915084	4.673646e-08	
+within	r_deme:family[south_TX3,Intercept]	1.681082	5.521959e-08	
+within	r_deme:family[south_TX1,Intercept]	3.211603	2.592071e-07	
+within	r_deme:family[south_OK1,Intercept]	1.35367	3.625411e-11	
+within	r_deme:family[south_NE2,Intercept]	2.024847	6.254691e-08	
+within	r_deme:family[south_NE1,Intercept]	3.885571	8.768407e-08	
+within	r_deme:family[north_WY1,Intercept]	2.648572	4.549451e-08	
+within	r_deme:family[north_SAS3,Intercept]	3.664093	4.078437e-07	
+within	r_deme:family[north_SAS2,Intercept]	1.12068	1.98475e-09	
+within	r_deme:family[north_SAS1,Intercept]	6.213301	0.03856729	
+within	r_deme:family[north_NE2,Intercept]	2.121586	5.668885e-09	
+within	r_deme:family[north_NE1,Intercept]	4.069428	5.38454e-08	
+within	r_deme:family[north_ND1,Intercept]	0.7881956	7.701882e-10	
+within	r_deme:family[north_MT2,Intercept]	1.778316	1.598564e-08	
+within	r_deme:family[north_MT1,Intercept]	0.7990829	1.174158e-12	
+between	r_deme[south,Intercept]	7.218304	2.393421e-09	
+between	r_deme[north,Intercept]	6.826916	8.886517e-09	

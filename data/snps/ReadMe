@@ -1,0 +1,16 @@
+KCF
+02/17/21
+
+SNP data here is from Ed McAssey's dryad.
+
+I downloaded the data from the dryad. The data were in the GenAlEx format.
+There were 245 dupliate site names in the dryard download and they were removed.
+The GenAlEx file header was edited to reflect the removal of duplicate sites
+GenAlEx uploaded to R as a genind object
+converted from genind to genlight
+converted from genlight to plink.csv and exported.
+
+I'm not sure if the plink file is a real plink file. No map file was output by ddartR.
+
+
+
