@@ -260,18 +260,42 @@ p1
 #    labels = c("(0, 0.025]", "(0.025, 0.975]", "(0.975, 1]")
 #  )
 
-setwd("~/Dropbox/oil_envr/results/qst/figs")
-cowplot::save_plot(
-  filename = "qst_values.qst_mod0.brms_6x3.pdf",
-  plot = p1,
-  ncol = 1,
-  nrow = 1,
-  base_height = 3,
-  base_asp = 2,
-  base_width = NULL
-  )
+#setwd("~/Dropbox/oil_envr/results/qst/figs")
+#cowplot::save_plot(
+#  filename = "qst_values.qst_mod0.brms_6x3.pdf",
+#  plot = p1,
+#  ncol = 1,
+#  nrow = 1,
+#  base_height = 3,
+#  base_asp = 2,
+#  base_width = NULL
+#  )
 
 ```
+
+### Qst-Fst test
+
+Calculate the Qst-Fst statistic for the posterior samples. Plot them, if 95% of samples don't overlap zero, you can conclude confidently that the trait is under spatial selection.
+
+```{r, eval = T}
+# Calculate the statistic
+qst_fst <- data.frame(qst = qst) %>%
+  mutate(stat = qst - 0.21)
+
+# View the Qst-Fst estimates
+p2 <- ggplot(qst_fst, aes(x=stat))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x=expression(paste(italic(Q)[ST] - italic(F)[ST])))
+p2
+
+```
+
+How can I put a probability number on the question, "What's the probability that the true value of Qst-Fst is less than 0.1?"
+
+
+
+
 
 ### Estimate h2
 
