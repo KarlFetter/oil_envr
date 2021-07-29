@@ -1,0 +1,42 @@
+# Pilot study data. Data are counts of 25 seeds that were in the Espec at 26C. 																																		
+# KCF/ND																																		
+# 07/09/21 																																		
+code	ind_code	vareity	chamber	sand	parafilm	temp	date	N_seeds	N_seed_weight_g	notes	TP_1	TP_2	TP_3	TP_4	TP_5	TP_6	TP_7	TP_8	TP_9	TP_10	TP_11	TP_12	TP_13	TP_14	TP_15	TP_16	TP_17	TP_18	TP_19	TP_20	TP_21	TP_22	TP_23	TP_24
+1	BS_01	cultivar	espec	0	0	26	06_29_12	25	1.5334	NA	0	2	7	7	7	7	8	8	8	8	9	9	9	9	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+2	BS_01	cultivar	espec	0	0	26	06_29_12	25	2.0657	NA	0	2	8	10	11	11	11	11	11	11	11	11	11	11	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+3	BS_01	cultivar	espec	0	0	26	06_29_12	25	1.6043	NA	0	3	4	7	7	7	7	9	9	9	9	9	9	9	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+4	BS_01	cultivar	espec	1	0	26	06_29_12	25	1.9171	NA	0	0	5	6	7	7	8	8	8	8	8	8	8	8	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+5	BS_01	cultivar	espec	1	0	26	06_29_12	25	1.7634	NA	0	0	11	14	14	15	15	15	15	15	15	15	15	15	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+6	BS_01	cultivar	espec	1	0	26	06_29_12	25	1.5585	NA	0	0	2	4	5	6	6	6	6	6	6	6	6	6	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+7	BS_01	cultivar	espec	1	1	26	06_29_12	25	1.5117	NA	0	0	3	3	3	3	4	5	5	5	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+8	BS_01	cultivar	espec	1	1	26	06_29_12	25	1.783	NA	0	0	1	2	3	3	3	3	4	4	4	4	4	4	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+9	BS_01	cultivar	espec	1	1	26	06_29_12	25	1.7038	NA	0	0	8	8	8	8	8	8	8	8	8	8	8	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+10	CAT_01	wild	espec	1	0	26	06_29_12	25	0.127	NA	0	0	0	0	1	1	2	2	2	3	3	3	3	4	4	4	4	4	4	4	NA	NA	NA	NA
+11	CEN_01	wild	espec	0	0	26	06_29_12	25	0.227	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	NA	NA	NA	NA
+12	BS_01	cultivar	espec	0	1	26	06_29_12	25	1.6172	NA	0	1	4	5	1	5	5	6	6	6	6	6	6	6	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+13	BS_01	cultivar	espec	0	1	26	06_29_12	25	1.7223	NA	0	0	1	1	4	2	4	4	4	4	6	6	6	6	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+14	BS_01	cultivar	espec	0	1	26	06_29_12	25	1.5835	NA	0	0	2	3	5	5	5	5	5	6	6	7	7	7	NA	NA	NA	NA	NA	NA	NA	NA	NA	NA
+1	BS_01	cultivar	conviron_1	0	0	4	07_07_21	25	1.379	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+2	BS_01	cultivar	conviron_1	0	0	4	07_07_21	25	1.7	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+3	BS_01	cultivar	conviron_1	0	0	4	07_07_21	25	1.355	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+4	BS_01	cultivar	conviron_1	1	0	4	07_07_21	25	1.51	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+5	BS_01	cultivar	conviron_1	1	0	4	07_07_21	25	1.405	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+6	BS_01	cultivar	conviron_1	1	0	4	07_07_21	25	1.615	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+7	BS_01	cultivar	conviron_1	1	1	4	07_07_21	25	1.402	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+8	BS_01	cultivar	conviron_1	1	1	4	07_07_21	25	1.119	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+9	BS_01	cultivar	conviron_1	1	1	4	07_07_21	25	1.289	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+10	BS_01	cultivar	conviron_1	0	1	4	07_07_21	25	1.418	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+11	BS_01	cultivar	conviron_1	0	1	4	07_07_21	25	1.607	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+12	BS_01	cultivar	conviron_1	0	1	4	07_07_21	25	1.497	NA	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+1	BS_01	cultivar	conviron_2	0	0	12	07_07_21	25	1.495	NA	0	0	0	0	1	2	2	4	6	6	7	7	8	9	11	11	12	12	12	12	12	12	12	12
+2	BS_01	cultivar	conviron_2	0	0	12	07_07_21	25	1.541	NA	0	0	0	0	2	3	6	6	9	9	12	12	12	14	14	14	14	15	15	15	15	15	15	15
+3	BS_01	cultivar	conviron_2	0	0	12	07_07_21	25	1.74	NA	0	0	0	0	0	1	5	7	9	9	11	12	12	12	12	12	12	14	14	14	14	14	14	14
+4	BS_01	cultivar	conviron_2	1	0	12	07_07_21	25	1.21	NA	0	0	0	0	1	2	3	5	5	5	5	6	7	7	7	9	10	10	11	11	11	11	11	11
+5	BS_01	cultivar	conviron_2	1	0	12	07_07_21	25	1.356	NA	0	0	0	0	3	3	6	8	10	10	10	12	12	12	12	12	12	12	12	13	13	13	13	13
+6	BS_01	cultivar	conviron_2	1	0	12	07_07_21	25	1.002	NA	0	0	0	0	1	1	2	3	5	6	6	8	8	8	8	8	8	8	9	9	9	9	9	9
+7	BS_01	cultivar	conviron_2	1	1	12	07_07_21	25	1.79	NA	0	0	0	0	0	1	1	3	3	6	8	11	11	12	12	12	12	12	12	13	13	13	13	13
+8	BS_01	cultivar	conviron_2	1	1	12	07_07_21	25	1.684	NA	0	0	0	0	1	1	2	4	4	6	6	7	7	8	8	8	9	9	9	12	12	12	12	12
+9	BS_01	cultivar	conviron_2	1	1	12	07_07_21	25	1.66	NA	0	0	0	0	0	2	2	4	4	7	7	8	9	11	11	11	11	11	12	12	12	12	12	12
+10	BS_01	cultivar	conviron_2	0	1	12	07_07_21	25	1.725	NA	0	0	0	0	0	1	2	3	5	6	6	6	7	7	7	9	9	9	9	10	10	10	10	10
+11	BS_01	cultivar	conviron_2	0	1	12	07_07_21	25	1.596	NA	0	0	0	0	0	0	1	2	3	4	5	6	6	9	9	9	9	9	9	9	9	9	9	9
+12	BS_01	cultivar	conviron_2	0	1	12	07_07_21	25	1.644	NA	0	0	0	0	1	2	3	5	5	6	7	7	7	8	8	8	8	8	8	8	8	8	8	10

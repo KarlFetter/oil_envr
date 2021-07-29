@@ -1,0 +1,10 @@
+These dirs contain the output for the qst models.
+Each FAME has it's own dir as follows:
+
+Pal = Palmitic Acid (16:0) - saturated
+Ste = Stearic Acid (18:0) - saturated
+Ole = Oleic Acid (18:1) - monounsaturated
+Lin = Linoleic Aic (18:2) - polyunsaturated
+
+KCF
+07/07/21

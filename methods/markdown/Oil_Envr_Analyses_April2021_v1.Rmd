@@ -7,19 +7,103 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
 ```
 
-# Question 1
+# Explore the response
 
-Do we observe evidence for spatially explicit selection on the percent of fatty acids in oil in wild sunflowers? To answer this question we'll use the Qst-Fst to determine if there is evidence for non-neutral genotypic variation among populations. Qst will be estimated using a mixed effects model with the form: 
+Let's take a look at the oil data and get an understanding for what we have.
+
+```{r fig.cap="Distribution of oil traits.", echo=F}
+# Read in the data and merge the ancestry data into the pheno/envr data
+dat <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+
+# Responses
+  # Saturated fatty acids
+r0 <- ggplot(data = dat, aes(x=Pal)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(x="Palmitic acid % (16:0)")
+r1 <- ggplot(data = dat, aes(x=Ste)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x="Stearic acid % (18:0)")
+
+r2 <- ggplot(data = dat, aes(x=ol)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(x="Oleic acid % (18:1)")
+r3 <- ggplot(data = dat, aes(x=lin)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x="Linoleic acid % (18:2)")
+
+r4 <- ggplot(data = dat, aes(x=sat)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x="Saturated fatty acid %")
+
+r5 <- ggplot(data = dat, aes(x=unsat)) +
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x="Unsaturated fatty acid %")
+
+# Pal = % Palmitic acid (16:0) 
+# Ste = % Stearic acid (18:0)
+# ol = % Oleic acid (18:1)
+# lin = % Linoleic acid (18:2)
+# sat = % Saturated Fatty Acids
+# unsat = % Unsaturated Fatty Acids
+
+
+p <- plot_grid(r0, r1, r5, r2, r3, r4, ncol = 3, nrow = 2)
+
+pdf(file="~/Dropbox/oil_envr/results/figs/oil_hist_v0.pdf",
+    width=6.25, height = 4)
+p
+dev.off()
+
+```
+
+It looks like a lot of the variation in the percent saturatted fatty acids is driven by variation of Pal.
+
+### Add png
+
+Figure out how to add images of the various oils to the plot. This is being more difficult than it should
+
+```{R, eval=F, echo=F}
+library(EBImage)
+
+img = readImage("path/to/your/image/file or URL")
+display(img, method = "raster")
+
+setwd("~/Dropbox/oil_envr/results/figs/molecule_drawings/")
+img = readImage("~/Dropbox/oil_envr/results/figs/molecule_drawings/palmitic_acid.png")
+
+img <- readPNG(system.file("img", "palmitic_acid.png", package="png"))
+
+palmitic <- system.file("palmitic_acid.png", package = "cowplot")
+
+
+ggdraw() + 
+  draw_plot(p) +
+  draw_image(
+    palmitic, x = 1, y = 1, hjust = 1, vjust = 1,
+    width = 0.15
+  )
+
+```
+
+# Q1: Qst-Fst
+
+Do we observe evidence for spatially explicit selection on fatty acid methyl ester (FAME) profiles from wild sunflower oil? To answer this question we'll use the Qst-Fst analysis to determine if there is evidence for non-neutral genotypic variation among populations. Qst will be estimated using a mixed effects model with the form: 
 
 Y ~ 1 + deme + (1|gr(Ind, A = G))
 
 Qst = Va_deme / Va_deme + Va_Ind
 
 Fst will be estimated on a per locus basis, and the Qst-Fst comparison will use the method suggested by Whitlock & Guillame (2008). Brielfy, that method of perfroms the Qst-Fst comparison by generating an empirical distribution of Qst values estimated from the genetic loci, and then compares the simulated distribution to the observed Qst estimate. 
-
-## Animal Model
 
 The additive genetic variance for these data can be estimated by providing a variance-covariance matrix defining relatedness between individuals. The relatedness matrix is derived from either a pedigree of the breeding history, or, if a pedigree is not available, from a set of genetic loci. In this case we have 247 genotypes from sequenced with the Golden Gate platform, and can use those loci to create a genomic relatedness matrix (G). These sequences were originally genotyped by McAssey et al. (2016) and may contain a few loci with allele frequencies suggestive of selection. I went to remove these loci, but I had a hard time connecting the locus names from the drayad folder to the eight loci under selection mentioned in the text. I'll use all the sequences I have for now.
 
@@ -182,94 +266,315 @@ p0 <- cowplot::as_grob(gplots::heatmap.2(G, dendrogram = 'none',
 
 #### Fit the animal model
 
-Now I can fit the animal model. Here are descriptions of the various model components:
+Now we can fit the animal model. Here are descriptions of the various model components:
 
-- sat: % saturated fatty acids measred in oil. 
+- unsat: % unsaturated fatty acids methyl esters (FAMEs) measured from pressed seed oil. 
 - block: blocking effects of greenhouse experiment. Levels = 1:4
-- deme: genetic populaitons (i.e. 'demes') estimated from SNP data with structure. Levels = north, south
+- deme: genetic populations (i.e. 'demes') estimated from SNP data with structure. Levels = north, south
 - ind_code: individual ID of mother plants
   - G: genomic relatedness matrix estimated from SNP loci.
 
+I have a few options for fitting the parameters of the model as population or group effects. Clearly the ind_code will be fit as a grouping effect in order to estimate the additive variance. I have the choice of also fitting the block and deme effects as group or population effects. The rationale behind fitting block and deme as group effects is that the data naturally fit into groups: the data were blocked as they were collected and the data are drawn from two distinct genetic demes. However, I'm not certain it's necessary to do so. I believe deme has a fixed mean, and should be treated as a fixed effect, but the intercept of the northern and southern demes can also be estimated if fit as a grouping effects. Block makes sense to fit as a grouping effect, but I'm not particularly interested in the intercept of block, just that it's effects are accounted for in the model. 
+
+In light of this uncertainty, I'll fit three or four iterations of the basic model and compare their goodness-of-fit with a few approaches.  
+
+##### Fit 1: ind_code as grouping effect
+
 ```{r, eval=FALSE}
 library(brms)
-
-qst_mod <- brm(sat ~ 1 + block + deme + (1|gr(ind_code, cov = G)),
+qst_pal_mod0 <- brm(Pal ~ block + deme + (1|gr(ind_code, cov = G)),
                 data = dat1,
                 data2 = list(G = G),
                 family = "gaussian",
-                seed = 2398, chains = 4L, iter = 6000)
-```
-```{R, eval = T}
-load("/media/two_tb_A/Dropbox/oil_envr/results/brms/models/qst/qst_mod0.brms")
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_pal_mod0, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod0.brms")
 
-# View the model
-qst_mod
 ```
 
-Here's an alternative way to specify the model. I'm not yet sure why I would do this however...
+##### Fit 2: block + ind_code as grouping effects
+
+```{r, eval=FALSE}
+qst_pal_mod1 <- brm(Pal ~ (1|block) + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_pal_mod1, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod1.brms")
+```
+
+##### Fit 3: deme + block + ind_code as grouping effects
+
+```{r, eval=FALSE}
+qst_mod2 <- brm(unsat ~ (1|block) + (1|deme) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+
+save(qst_mod2, file="~/Dropbox/oil_envr/results/brms/models/qst/qst_mod2.brms")
+```
+
+##### Fit 4: deme correlated to ind_code
+
+Here's an alternative way to specify the model. This model accounts for the correlation between the additive genetic effects within individuals (i.e. their allele frequencies), and the fact that each deme is an evolutionary breeding population. I quite like this model. `ind_code` is treated as a grouping effect, while `deme` is a population effect. I should be able to get the conditional effects of deme from this model.
 
 ```{r, eval=F, message=F}
-# This is a slightly different model where the effects of deme are a
-# random effect and are a cofactor with the levels of ind_code
-# Still not sure if this is correct
-pop_mod4 <- brm(sat ~ 1 + block + (1 + deme|gr(ind_code, cov = G)),
+qst_mod3 <- brm(unsat ~ block + (1 + deme|gr(ind_code, cov = G)),
                 data = dat1,
                 data2 = list(G = G),
                 family = "gaussian",
-                seed = 2398, chains = 4L, iter = 6000)
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_mod3, file="~/Dropbox/oil_envr/results/brms/models/qst/qst_mod3.brms")
+```
 
+##### Fit 5. block as group and deme correlated to ind_code
+
+```{r, eval=F, message=F}
+qst_mod4 <- brm(unsat ~ (1|block) + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_mod4, file="~/Dropbox/oil_envr/results/brms/models/qst/qst_mod4.brms")
+
+
+```
+
+##### Evaluate model fits
+
+Read in the models if they aren't in memory.
+
+```{R, eval = T, echo=F}
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod0.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod3.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod4.brms")
+```
+
+##### Leave-one out cross-validation
+
+What exactly is going on here? I need to read it and write something here to explain it to myself. 
+
+```{R}
+# Compare best fit with loo
+loo_compare(qst_mod0, qst_mod1, qst_mod2, qst_mod3, qst_mod4)
+
+
+#
+
+qst_mod0_loo <- loo(qst_mod0)
+qst_mod1_loo <- loo(qst_mod1)
+qst_mod2_loo <- loo(qst_mod2)
+qst_mod3_loo <- loo(qst_mod3)
+qst_mod4_loo <- loo(qst_mod4)
+
+lpd_point <- cbind(
+  qst_mod0_loo$pointwise[,"elpd_loo"],
+  qst_mod1_loo$pointwise[,"elpd_loo"],
+  qst_mod2_loo$pointwise[,"elpd_loo"],
+  qst_mod3_loo$pointwise[,"elpd_loo"],
+  qst_mod4_loo$pointwise[,"elpd_loo"]
+)
+
+```
+
+##### Other loo_compare methods
+
+Compare the models with other goodness of fit tests.
+
+
+##### Bayesian R2 
+
+Calculate the Bayesian R2 for each model. The higher R2 is favored.
+
+```{r}
+# Calculate the R2's
+R2_mod0 <- loo_R2(qst_mod0)
+R2_mod1 <- loo_R2(qst_mod1)
+R2_mod2 <- loo_R2(qst_mod2)
+R2_mod3 <- loo_R2(qst_mod3)
+R2_mod4 <- loo_R2(qst_mod4)
+
+# Send the estiamtes to a single object
+R2 <- data.frame(
+  model = c("qst_mod0", "qst_mod1", "qst_mod2", "qst_mod3", "qst_mod4"),
+  estimate = c(R2_mod0[1], R2_mod1[1], R2_mod2[1], R2_mod3[1], R2_mod4[1]),
+  Q2.5 = c(R2_mod0[3], R2_mod1[3], R2_mod2[3], R2_mod3[3], R2_mod4[3]),
+  Q97.5 = c(R2_mod0[4], R2_mod1[4], R2_mod2[4], R2_mod3[4], R2_mod4[4])
+)
+
+# Plot the estimate and its upper and lower boundaries
+pr2 <-ggplot(R2, aes(x=model, y=estimate)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.35) +
+  theme_minimal() + 
+  theme(axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+        axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid')) +
+  labs(y=expression("Bayesian R"^2), x="") +
+  ylim(0,1) + 
+  geom_text(aes(label = round(estimate,3)), nudge_x = 0.27)
+
+ggsave("qst_models_r2_v0.pdf", plot=pr2, width = 6, height = 3)
 ```
 
 #### Estimate Qst
 
-Qst is the proportion of additive genetic variance among populations to the total phenotypic variation. Since we fit a bayesian model, we have posterior samples to work with to estimate the median and confidence intervals of the median.
+Qst is the proportion of additive genetic variance among populations to the total phenotypic variation. Since we fit a bayesian model, we have posterior samples to work with to estimate the median and confidence intervals of the median. I'll estiamte Qst for each of the four models and plot their distributions.
 
-```{r, eval=T}
-# Pull out the posterior sample and square them.
-# These are the variance components 
-out <- qst_mod %>%
-  brms::posterior_samples(.vars=2:4, .funs=funs(.^2))
+##### Fit 1 
+
+```{R, eval = F, echo = T}
+out0 <- qst_mod0 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_block, b_demesouth, sd_ind_code__Intercept, sigma)
+
 
 # Calculate Qst from the correct variance components.
-qst = out$b_demesouth / 
-  (out$b_demesouth + out$b_block + 2 * out$sd_ind_code__Intercept)
+qst0 = data.frame(qst = 
+                    out0$b_demesouth^2 / 
+                    (out0$b_demesouth^2 + out0$b_block^2 + 
+                       out0$sigma^2 + 2 * out0$sd_ind_code__Intercept^2))
 
-qst = out$b_demesouth / 
-  (out$b_demesouth + 2 * out$sd_ind_code__Intercept)
+# plot the fit
+pqst0 <- ggplot(qst0, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod0") +
+  xlim(0,1)
 
-# Print the median & interval estimates
-tidybayes::median_qi(qst)
+```
 
-# Plot the distribution
-p1 <- ggplot(data.frame(Qst=qst), aes(x=Qst))  + 
-  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
-  theme_minimal() + 
-  labs(x=expression(paste(italic(Q)[ST])))
-p1
+##### Fit 2 
 
-# This isn't working.
-# Keep it moving and come back to this if you want it.
-#ggplot(data.frame(Qst=qst), aes(x=Qst, fill = factor(stat(quantile)))) +
-#  stat_density_ridges(
-#    geom = "density_ridges_gradient",
-#    calc_ecdf = TRUE,
-#    quantiles = c(0.025, 0.975)
-#  ) +
-#  scale_fill_manual(
-#    name = "Probability", values = c("#FF0000A0", "#A0A0A0A0", "#0000FFA0"),
-#    labels = c("(0, 0.025]", "(0.025, 0.975]", "(0.975, 1]")
-#  )
+```{R, eval = F, echo = T}
+out1 <- qst_mod1 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_demesouth, sd_block__Intercept, sd_ind_code__Intercept, sigma)
 
-#setwd("~/Dropbox/oil_envr/results/qst/figs")
-#cowplot::save_plot(
-#  filename = "qst_values.qst_mod0.brms_6x3.pdf",
-#  plot = p1,
-#  ncol = 1,
-#  nrow = 1,
-#  base_height = 3,
-#  base_asp = 2,
-#  base_width = NULL
-#  )
+
+# Calculate Qst from the correct variance components.
+qst1 = data.frame(qst = 
+                    out1$b_demesouth^2 / 
+                    (out1$b_demesouth^2 + out1$sd_block__Intercept^2 + 
+                       out1$sigma^2 + 2 * out1$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst1 <- ggplot(qst1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod1") +
+  xlim(0,1)
+
+```
+
+##### Fit 3 
+
+```{R, eval = F, echo = T}
+out2 <- qst_mod2 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, sd_block__Intercept, sd_deme__Intercept, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst2 = data.frame(qst = 
+                    out2$sd_deme__Intercept^2 / 
+                    (out2$sd_deme__Intercept^2 + out2$sd_block__Intercept^2 + 
+                       out2$sigma^2 + 2 * out2$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst2 <- ggplot(qst2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod2") +
+  xlim(0,1)
+
+```
+
+##### Fit 4
+
+```{R, eval = F, echo = T}
+out3 <- qst_mod3 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_block, sd_ind_code__demesouth, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst3 = data.frame(qst = 
+                    out3$sd_ind_code__demesouth^2 / 
+                    (out3$sd_ind_code__demesouth^2 + out3$b_block^2 + 
+                       out3$sigma^2 + 2 * out3$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst3 <- ggplot(qst3, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod3") +
+  xlim(0,1)
+
+```
+
+##### Fit 5
+
+```{R, eval = F, echo = T}
+out4 <- qst_mod4 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, sd_block__Intercept, 
+         sd_ind_code__demesouth, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst4 = data.frame(qst = 
+                    out4$sd_ind_code__demesouth^2 / 
+                    (out4$sd_ind_code__demesouth^2 + out4$sd_block__Intercept^2 + 
+                       out4$sigma^2 + 2 * out4$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst4 <- ggplot(qst4, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod4") +
+  xlim(0,1)
+```
+
+##### View Qst jointly
+
+```{r}
+# Histograms in a single plot
+phist <- cowplot::plot_grid(pqst0, pqst1, pqst2, pqst3, pqst4, ncol=3)
+ggsave("qst_histograms.pdf", phist, width=6, height = 3.5)
+
+# Histograms as a single ggridges plot
+dat <- data.frame(
+  qst = rbind(qst0, qst1, qst2, qst3, qst4),
+  model = c(rep("qst0", 12000), rep("qst1", 12000), 
+            rep("qst2", 12000), rep("qst3", 12000), rep("qst4", 12000))
+)
+
+# Load ggridges & plot
+library(ggridges)
+phist1 <- ggplot(dat, aes(x=qst, y=model)) + 
+  geom_density_ridges(rel_min_height = 0.01,
+                      quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975), 
+                      alpha = 0.7) +
+  labs(x=expression(italic(Q)[ST]))
+
+ggsave("qst_ridges_v0.pdf", phist1, width=6, height=6)
 
 ```
 
@@ -279,31 +584,48 @@ Calculate the Qst-Fst statistic for the posterior samples. Plot them, if 95% of 
 
 ```{r, eval = T}
 # Calculate the statistic
-qst_fst <- data.frame(qst = qst) %>%
-  mutate(stat = qst - 0.21)
+qst_fst0 <- data.frame(qst = qst0) %>% mutate(stat = qst - 0.21)
+qst_fst1 <- data.frame(qst = qst1) %>% mutate(stat = qst - 0.21)
+qst_fst2 <- data.frame(qst = qst2) %>% mutate(stat = qst - 0.21)
+qst_fst3 <- data.frame(qst = qst3) %>% mutate(stat = qst - 0.21)
+qst_fst4 <- data.frame(qst = qst4) %>% mutate(stat = qst - 0.21)
+
+# Create the object for the ggridges plot
+dat1 <- data.frame(
+  stat=c(qst_fst0$stat, qst_fst1$stat, qst_fst2$stat, 
+            qst_fst3$stat, qst_fst4$stat),
+  model = c(rep("qst0", 12000), rep("qst1", 12000), 
+            rep("qst2", 12000), rep("qst3", 12000), rep("qst4", 12000))
+ )
 
 # View the Qst-Fst estimates
-p2 <- ggplot(qst_fst, aes(x=stat))  + 
+phist2 <- ggplot(dat1, aes(x=stat, y=model)) + 
+  geom_density_ridges(rel_min_height = 0.01,
+                      quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975), 
+                      alpha = 0.7) +
+  labs(x=expression(paste(italic(Q)[ST] - italic(F)[ST]))) +
+  xlim(-0.3,1)
+
+ggsave("qst-fst_ridges_v0.pdf", phist2, width=6, height=6)
+
+# Plot the best model as a single histogram (when you are ready)
+p0 <- ggplot(qst_fst0, aes(x=stat))  + 
   geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
   theme_minimal() + 
   labs(x=expression(paste(italic(Q)[ST] - italic(F)[ST])))
-p2
 
 ```
 
 How can I put a probability number on the question, "What's the probability that the true value of Qst-Fst is less than 0.1?"
-
-
-
-
 
 ### Estimate h2
 
 Narrow-sense heritabiity estimate.
 
 ```{r, eval=T}
-Va = out$sd_ind_code__Intercept
-Vp = out$sd_ind_code__Intercept + out$sigma
+Va = out3$sd_ind_code__Intercept
+Vp = out0$sd_ind_code__Intercept + out0$sigma
 
 tidybayes::median_qi(Va/Vp)
 ```
@@ -319,14 +641,287 @@ Ed previously estimated Fst to be 0.21 using all markers. He also performed an a
 # Estimate Fst as a two population model with multiple families.
 # In this model deme = population and family = breeding population
 
+# FinePop may be a tool I can use to do this.
+library(FinePop)
+
+
+# Use the Empirical Bayesian Estimator
+EBFST(popdata, num.iter = 100, locus = F)
+
+# Also try WC's Theta
+thetaWC.pair()
+
+```
+
+# Q1 Fork
+
+Perform the Qst-Fst test using QstFstComp.
+
+# Q2: Multiple regression
+
+## Explore the Climate data
+
+Create histograms and a PCA of the climate data.
+
+```{r}
+# Read in the data and merge the ancestry data into the pheno/envr data
+dat <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+```
+
+And let's take a look at all of the climate data.
+
+```{r fig.cap = "Distribution of 19 bioclim variables", echo = F}
+# Predictors
+p0  <- ggplot(data = clim, aes(x=bio1 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p1  <- ggplot(data = clim, aes(x=bio2 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p2  <- ggplot(data = clim, aes(x=bio3 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p3  <- ggplot(data = clim, aes(x=bio4 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p4  <- ggplot(data = clim, aes(x=bio5 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p5  <- ggplot(data = clim, aes(x=bio6 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p6  <- ggplot(data = clim, aes(x=bio7 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p7  <- ggplot(data = clim, aes(x=bio8 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p8  <- ggplot(data = clim, aes(x=bio9 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p9  <- ggplot(data = clim, aes(x=bio10)) + geom_histogram() + theme(axis.title.y = element_blank())
+p10 <- ggplot(data = clim, aes(x=bio11)) + geom_histogram() + theme(axis.title.y = element_blank())
+p11 <- ggplot(data = clim, aes(x=bio12)) + geom_histogram() + theme(axis.title.y = element_blank())
+p12 <- ggplot(data = clim, aes(x=bio13)) + geom_histogram() + theme(axis.title.y = element_blank())
+p13 <- ggplot(data = clim, aes(x=bio14)) + geom_histogram() + theme(axis.title.y = element_blank())
+p14 <- ggplot(data = clim, aes(x=bio15)) + geom_histogram() + theme(axis.title.y = element_blank())
+p15 <- ggplot(data = clim, aes(x=bio16)) + geom_histogram() + theme(axis.title.y = element_blank())
+p16 <- ggplot(data = clim, aes(x=bio17)) + geom_histogram() + theme(axis.title.y = element_blank())
+p17 <- ggplot(data = clim, aes(x=bio18)) + geom_histogram() + theme(axis.title.y = element_blank())
+p18 <- ggplot(data = clim, aes(x=bio19)) + geom_histogram() + theme(axis.title.y = element_blank())
+
+plot_grid(p0, p1, p2, p3, p4, p5, 
+          p6, p7, p8, p9, p10, p11,
+          p12, p13, p14, p15, p16, 
+          p17, p18, 
+          ncol = 4, nrow = 5) 
+```
+
+### Climate PCA
+
+```{r, eval=T}
+# Keep only numeric data
+clim <- dat[,-c(1:9, 29:32)]
+
+# Build the pca
+pc1 <- prcomp(clim, scale.=TRUE)
+
+library(ggfortify)
+pc_plot0 <- autoplot(pc1, data = dat, colour="deme", 
+         loadings=TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3,
+         scale = 0)
+
+# Include the unsaturated fatty acid percent
+clim1 <- dat[,-c(1:6, 8:9, 29:32)]
+pc2 <- prcomp(clim1, scale.=TRUE)
+pc_plot1 <- autoplot(pc2, data = dat, colour="deme", 
+         loadings=TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3,
+         scale=0)
+
+# arrange the three plots in a single row
+prow <- plot_grid(
+  pc_plot0 + theme(legend.position="none"),
+  pc_plot1 + theme(legend.position="none"),
+  align = 'vh',
+  labels = 'auto',
+  hjust = -1,
+  nrow = 2)
+
+# extract the legend from one of the plots
+legend <- get_legend(
+  # create some space to the left of the legend
+  pc_plot0 + theme(legend.box.margin = margin(0, 0, 0, 12))
+)
+
+# add the legend to the row we made earlier. Give it one-third of 
+# the width of one plot (via rel_widths).
+plot_grid(prow, legend, rel_widths = c(3, .4))
+
+```
+
+### Lat-Long correlation
+
+Latitude and longitude and are correlated to all of the of environmental traits to some degree. Let's get an understanding for how much correlation is present between the dependent variables in our model.
+
+```{r}
+# Remove character factors from the data
+df <- dat[,-c(1:7,29:32)]
+
+# Calculate the correlation matrix
+corr<- cor(df)
+
+# Plot it
+#pdf("corr_mat_6x6_v0.pdf", width = 6, height = 6)
+ggcorrplot::ggcorrplot(corr, type="upper", hc.order = FALSE, 
+                       lab = TRUE, lab_size = 2)
+#dev.off()
+
+```
+
+It appears there is substantial correlation between latitude and the temperature variables (bio1-bio11).
+
+### Populaiton dissimilarity matrix
+
+To account for the substantial correlation to latitude and longitude that is present in the dependent variables, I'll use a property of the sample, namely, the grouped nature of the collection effort. Latitude and longitude is a spatial structure of the sampling effort and is a nuisance parameter I need to account for. Using the collection site (i.e. pop_code) as a grouping effect with the variance-covariance matrix set as the distance matrix of the lat-longs will allow me to account for the autocorrelation between collection sites.
+
+The rational here is the sampling as an explicit spatial structure that spans a latitudinal and longitudinal gradient. To account for the spatial structure, we use collection site as a grouping effect and set the variance-covariance matrix of the sites as a square distance matrix for the collection sites.
+
+```{r}
+# Create a data.frame of the lat-long for each population
+df <- dat %>%
+  select(pop_code, lat, lon) %>% 
+  distinct(pop_code, .keep_all = TRUE) %>%
+  arrange(lat)
+
+# Create the distance matrix of the lat longs
+S <- dist(df[,-1], upper = TRUE, diag = TRUE)
+
+# Set the row names of S to the populations
+# you'll have to do it in vim, a dist object
+# won't take row or column names.
+# rownames(S) <- df[,1]
+
+#### THIS IS THE PROBLEM. YOU'RE NOT ACTUALLY WORKING WITH A MATRIX #####
+# This distance matrix object is weird and you want to have a variance-covariance matrix.
+# You'll have to figure out how to get this working.
+# The rownames are needed for model fitting
+
+```
+
+Use the distance matrix as variance covariance matrix in the model (although it isn't a vcv per se).
+
+#### This isn't working
+
+```{r, eval = F}
+# Here's my thought process here. I'm not sure it's working.
+# Get the lat-longs into a matrix
+# Set the rownmaes to the pop_codes
+# Create a distance matrix from them
+# Or a variance-covariance matrix
+#
+# The problem is that the distance matrix isn't really a
+# variance-covariance matrix, although I can force it to one.
+
+# Create a matrix of the lat-long for each population
+mat0 <- dat %>%
+  select(pop_code, lat, lon) %>% 
+  distinct(pop_code, .keep_all = TRUE) %>%
+  arrange(lat)
+
+# Convert to a matrix
+mat <- matrix(data = c(mat0[,2], mat0[,3]), ncol = 2, nrow = 14,
+              dimnames = list(row = mat0[,1], c("lat", "lon")))
+
+# Make the variance-covariance matrix.
+# # Still not what I want
+S <- vcov(lm(lat ~ lon, data = data.frame(mat)))
+
 
 
 
 ```
 
+### Multiple regression
 
-## Compare Qst to Fst
-
-How to do this? I think it's simply a matter of comparing the two values and if they overlap. You can take the different and the 95% CI's of the difference to, if the CI's of the differences don't overlap, you can take that as evidence of support.
+This model will fit the unsaturated fatty acid data to the environmental variables, blocking effects, sampling site (i.e. pop_code) with the covariances set by the distance matrix, and the individual effects with the covariances set by the kinship matrix.
 
 
+```{r, eval=FALSE}
+# Center and scale the predictors to remove effects of scale
+arm::standardize(dat)
+
+z.dat <- 
+
+# Read in the G matrix
+G <- read.table("~/Dropbox/oil_envr/results/kinship/genomic_relatedness_matrix.N140.loci247.txt",T,'\t')
+
+# Read in the site distance matrix
+S <- read.table("~/Dropbox/oil_envr/results/lat-lon_corr/S",T,'\t', row.names = 1)
+
+# Fit the model
+mod3 <- brm(unsat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              block + 
+              (1|gr(pop_code, cov = S)) +
+              (1|gr(ind_code, cov = G)),
+            data = dat,
+            data2 = list(S = S, G = G),
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 10000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+# Fit the model
+mod3 <- brm(unsat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              block + lat + lon +
+              (1|pop_code) +
+              (1|gr(ind_code, cov = G)),
+            data = dat,
+            data2 = list(G = G),
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 10000) 
+  
+  
+  
+qst_mod <- brm(sat ~ 1 + block + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+```
+
+# Manuscript Writing Scratch
+
+Code to generate supplemental tables/figs and simple statistics for the manuscript.
+
+## Population Table
+
+Make a table of the populations with their codes, names, coords, and the sample sizes for the number of plants with trait data and the number with sequence data (and hence were included in the Qst).
+
+```{r}
+# Read in the population code file for each ind.
+# THis is the file for all inds that were included in the study. N = 286
+pop <- read.table("~/Dropbox/oil_envr/data/codes/pop_codes_N286.txt",T,'\t')
+
+# Get the list of inds used in the Qst model
+# We have trait and genotype data for 140 inds
+qst_inds <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+
+# Get a list of inds that you have trait data for.
+# We have trait data for 153 inds
+trait <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim.txt",T,'\t')
+
+# Get a version of the table that summarizes the number of inds per pop for the 153 with trait data
+tt <- pop %>%
+  filter(ind_code %in% trait$ind_code) %>%
+  count(usda_pop) %>%
+  left_join(pop, by = "usda_pop") %>%
+  distinct(usda_pop, .keep_all=T) %>%
+  arrange(desc(Lat)) %>%
+  select(usda_pop, pop_code, Region, Country, N=n, Lat, Lon)
+
+# Get a version of the trait table for the qst model
+qt <- pop %>%
+  filter(ind_code %in% qst_inds$ind_code) %>%
+  count(usda_pop) %>%
+  left_join(pop, by = "usda_pop") %>%
+  distinct(usda_pop, .keep_all=T) %>%
+  arrange(desc(Lat)) %>%
+  select(usda_pop, pop_code, Region, Country, N=n, Lat, Lon)
+
+# They are the same in length and number of inds per population
+
+# Save tt in latex format
+setwd("~/Dropbox/oil_envr/manuscript/tables/pop_table/")
+write.table(tt, file="population_table.txt", sep='\t', quote=F, row.names=F)
+
+
+```

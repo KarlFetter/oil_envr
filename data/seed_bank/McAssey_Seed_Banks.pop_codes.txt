@@ -1,0 +1,11 @@
+accession_code	ind_code_1	ind_code_2	ind_code_3	lot_number	seed_amt_est	pop_code	Region	Country	N	Lat	Lon
+PI_413160	H_202	A_1609	Ames_1609	89ncai01	few	TX1	Texas	USA	20	31.041	−104.821
+PI_468476	ANN_1254	Ames_6865		01ncai01	many	TX3	Texas	USA	20	31.206	−102.635
+PI_468477	ANN_1257	Ames_6868		02ncai01	many	TX4	Texas	USA	20	35.19	−102.010
+PI_468482	ANN_1262	Ames_6873		01ncai01	few	TX5	Texas	USA	20	35.199	−100.799
+PI_468486	ANN_1272	Ames_6883		97ncai01	many	OK1	Oklahoma	USA	12	35.262	−99.669
+PI_531035	2006	Ames_7981		87ncao51	few	MT1	Montana	USA	20	46.585	−108.592
+PI_586817	ANN_2118	Ames_17883		03ncai01	many	MT2	Montana	USA	20	46.795	−105.302
+PI_586870	ANN_2196	Ames_17936		04ncai01	many	NE1	Nebraska	USA	20	41.063	−98.091
+PI_613750	ANN_203	Ames_6252		97ncai01	few	ND1	North_Dakota	USA	20	46.879	−102.789
+PI_649806	ANN_79	Ames_6172		04ncab01	many	WY1	Wyoming	USA	20	41.418	−104.098

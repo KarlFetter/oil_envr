@@ -1,0 +1,23 @@
+# Inventory of the Ed McAssey seeds we have.
+# ND/KCF
+# May 2021
+ind_code_1	ind_code_2	ind_code_3	accession_code	lot_number	seed_amt_est
+ANN_1272	Ames_6883		PI_468486	97ncai01	many
+ANN_1200	Ames_6995		PI_468475	02ncai01	many
+ANN_2507	Ames_27889		PI_649857	05ncao51	few
+ANN_1811			PI_494567	03ncai01	many
+ANN_79	Ames_6172		PI_649806	04ncab01	many
+ANN_2196	Ames_17936		PI_586870	04ncai01	many
+ANN_1338	Ames_6774		PI_468523	00ncai01	many
+ANN_1254	Ames_6865		PI_468476	01ncai01	many
+ANN_1257	Ames_6868		PI_468477	02ncai01	many
+ANN_185	Ames_6242		PI_613723	97ncai01	many
+ANN_2559	Ames_29273		Ames_29273	08ncai01	few
+H_202	A_1609	Ames_1609	PI_413160	89ncai01	few
+ANN_2118	Ames_17883		PI_586817	03ncai01	many
+ANN_1323	Ames_6759		PI_468519	95ncai01	few
+ANN_1321	Ames_6757		PI_468517	00ncai01	few
+ANN_203	Ames_6252		PI_613750	97ncai01	few
+ANN_1262	Ames_6873		PI_468482	01ncai01	few
+ANN_2199	Ames_17939		PI_586873	91ncao51	few
+2006	Ames_7981		PI_531035	87ncao51	few

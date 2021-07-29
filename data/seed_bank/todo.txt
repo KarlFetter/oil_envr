@@ -1,0 +1,3 @@
+add a column of pop_codes in the mcassey collection.
+
+Join the inventory with a file of pop_codes + PI_acession code (Table 1. McAssey et al. 2017)

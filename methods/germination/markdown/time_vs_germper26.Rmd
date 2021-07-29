@@ -1,0 +1,142 @@
+---
+title: "time_vs_germper"
+author: "Natalie Dietz"
+date: "7/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(plotrix)
+library(cowplot)
+```
+
+```{r}
+
+# Load the data for 26 C
+dat1 <- read.table("/Users/nataliedietz/Desktop/burke_lab/lab_mtng_2/ps_data_26.txt", header = T, sep = "\t")
+
+# Massage the data to get a mean for each treatment at each time point
+dat <- dat1  %>%
+  slice(-c(10,11)) %>%
+  select(-code, -notes, -TP_11, -TP_12, -TP_13, -TP_14, 
+         -TP_15, -TP_16, -TP_17, -TP_18, -TP_19, -TP_20 ) %>%
+  pivot_longer(
+    cols = paste("TP", 01:10, sep="_"),
+    names_to = "time_point",
+    values_to = "germ_count"
+  ) %>%
+  mutate(germ_perc = germ_count/ N_seeds, 
+         sand1 = ifelse(sand == 0, "no", "yes"), 
+         parafilm1 = ifelse(parafilm == 0, "no", "yes"),
+         treatment = paste(time_point, sand1, parafilm1, sep="_"),
+         treatment1 = paste(sand1, parafilm1, sep="_")
+         ) %>%
+  group_by(treatment) %>% 
+  mutate(germ_mean_by_trt_tp = mean(germ_perc),
+         se_lwr = germ_mean_by_trt_tp - std.error(germ_perc),
+         se_upr = germ_mean_by_trt_tp + std.error(germ_perc) 
+  )
+
+# Create a vector for ordering the time points
+tp_order = c("TP_1", "TP_2", "TP_3", "TP_4", "TP_5", "TP_6", "TP_7", "TP_8", "TP_9", "TP_10")
+tp_labels = seq(from = 12, to = 120, by = 12)
+
+p0 <- ggplot(dat, aes(x = time_point, y = germ_mean_by_trt_tp, group = treatment1, color = treatment1)) + 
+  geom_errorbar(aes(ymin= se_lwr, ymax= se_upr), 
+                width=0.1, size=0.25, color = "grey50") +
+  geom_point() + 
+  geom_line() +
+  scale_x_discrete(limits = tp_order, labels = tp_labels) +
+  guides(color = guide_legend(title = "Treatment")) +
+  scale_color_discrete(labels = c("control", "parafilm", "sand", "sand & parafilm")) +
+  labs(x = "Hours", y = "Germination %", title = "26 C") +
+  theme_light()
+
+p0
+```
+
+```{r}
+# Load the data for 4 C
+dat2 <- read.table("/Users/nataliedietz/Desktop/burke_lab/lab_mtng_2/ps_data_4.txt", header = T, sep = "\t")
+
+# Massage the data to get a mean for each treatment at each time point
+dat4 <- dat2  %>%
+  select(-code, -notes) %>%
+  pivot_longer(
+    cols = paste("TP", 01:24, sep="_"),
+    names_to = "time_point",
+    values_to = "germ_count"
+  ) %>%
+  mutate(germ_perc = germ_count/ N_seeds, 
+         sand1 = ifelse(sand == 0, "no", "yes"), 
+         parafilm1 = ifelse(parafilm == 0, "no", "yes"),
+         treatment = paste(time_point, sand1, parafilm1, sep="_"),
+         treatment1 = paste(sand1, parafilm1, sep="_")
+         ) %>%
+  group_by(treatment) %>% 
+  mutate(germ_mean_by_trt_tp = mean(germ_perc),
+         se_lwr = germ_mean_by_trt_tp - std.error(germ_perc),
+         se_upr = germ_mean_by_trt_tp + std.error(germ_perc))
+
+
+# Create a vector for ordering the time points
+tp_order = c("TP_1", "TP_2", "TP_3", "TP_4", "TP_5", "TP_6", "TP_7", "TP_8", "TP_9", "TP_10", "TP_11", "TP_12", "TP_13", "TP_14", "TP_15", "TP_16", "TP_17", "TP_18", "TP_19", "TP_20", "TP_21", "TP_22", "TP_23", "TP_24")
+tp_labels = seq(from = 12, to = 288, by = 12)
+
+p1 <- ggplot(dat4, aes(x = time_point, y = germ_mean_by_trt_tp, group = treatment1, color = treatment1)) + 
+  geom_point() + 
+  geom_line() +
+  geom_errorbar(aes(ymin= se_lwr, ymax= se_upr), width=0.1, size=0.25, color = "grey50") +
+  scale_x_discrete(limits = tp_order, labels = tp_labels)+
+  scale_color_discrete(labels = c("control", "parafilm", "sand", "sand and parafilm")) +
+  guides(color = guide_legend(title= "treatment")) + 
+  labs(x="Hours", y = "Germination %", title = "4 C")
+    theme_light()
+
+p1
+```
+
+```{r}
+# Load the data for 12 C
+dat3 <- read.table("/Users/nataliedietz/Desktop/burke_lab/lab_mtng_2/ps_data_12a.txt", header = T, sep = "\t")
+
+# Massage the data to get a mean for each treatment at each time point
+dat12 <- dat3  %>%
+  select(-code, -notes) %>%
+  pivot_longer(
+    cols = paste("TP", 01:24, sep="_"),
+    names_to = "time_point",
+    values_to = "germ_count"
+  ) %>%
+  mutate(germ_perc = germ_count/ N_seeds, 
+         sand1 = ifelse(sand == 0, "no", "yes"), 
+         parafilm1 = ifelse(parafilm == 0, "no", "yes"),
+         treatment = paste(time_point, sand1, parafilm1, sep="_"),
+         treatment1 = paste(sand1, parafilm1, sep="_")
+         ) %>%
+  group_by(treatment) %>% 
+  mutate(germ_mean_by_trt_tp = mean(germ_perc),
+         se_lwr = germ_mean_by_trt_tp - std.error(germ_perc),
+         se_upr = germ_mean_by_trt_tp + std.error(germ_perc))
+
+
+# Create a vector for ordering the time points
+tp_order = c("TP_1", "TP_2", "TP_3", "TP_4", "TP_5", "TP_6", "TP_7", "TP_8", "TP_9", "TP_10", "TP_11", "TP_12", "TP_13", "TP_14", "TP_15", "TP_16", "TP_17", "TP_18", "TP_19", "TP_20", "TP_21", "TP_22", "TP_23", "TP_24")
+tp_labels = seq(from = 12, to = 288, by = 12)
+
+p2 <- ggplot(dat12, aes(x = time_point, y = germ_mean_by_trt_tp, group = treatment1, color = treatment1)) + 
+  geom_point() + 
+  geom_line() +
+  geom_errorbar(aes(ymin= se_lwr, ymax= se_upr), width=0.1, size=0.25, color = "grey50") +
+  scale_x_discrete(limits = tp_order, labels = tp_labels)+
+  scale_color_discrete(labels = c("control", "parafilm", "sand", "sand and parafilm")) +
+  guides(color = guide_legend(title= "treatment")) + 
+  labs(x="Hours", y = "Germination %", title = "12 C")
+    theme_light()
+
+p2
+```
+

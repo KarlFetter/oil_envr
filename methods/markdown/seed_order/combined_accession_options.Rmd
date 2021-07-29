@@ -1,0 +1,183 @@
+---
+title: "Combined Accession Options"
+author: "Natalie Dietz"
+date: "7/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(mapdata)
+library(maptools)
+library(usmap)
+library(raster)
+library(maps)
+library(ggmap)
+library(ggsn)
+library(cowplot)
+```
+
+### Here is a map with all of the accessions we want compared with all possible accessions
+
+```{R, warning=FALSE, eval = FALSE}
+# First, let's build the map. Download and save the canada map
+# that includes the province boundaries
+canada <- map_data(getData(country="Canada", level="1"))
+
+# Save the file
+save(canada, file = "~/Dropbox/oil_envr/methods/markdown/seed_order/canada.sp")
+
+```
+```{R, warning = FALSE, eval = TRUE}
+#Create the map with state lines 
+usa <- map_data("state")
+
+# Reload the canada shape file if neccessary
+load("~/Dropbox/oil_envr/methods/markdown/seed_order/canada.sp")
+
+# Create the mexico map
+mexico <- map_data("worldHires", "Mexico")
+
+NAmap <- ggplot() + geom_polygon(data = usa, 
+                                 aes(x=long, y = lat, group = group),
+                                 fill = "white", 
+                                 color="black") +
+    geom_polygon(data = canada, aes(x=long, y = lat, group = group), 
+                 fill = "white", color="black") + 
+    geom_polygon(data = mexico, aes(x=long, y = lat, group = group), 
+                 fill = "white", color="black") +
+    coord_fixed(xlim = c(-128, -80),  ylim = c(25, 60), ratio = 1.2)
+```
+
+```{r}
+# Read in accession codes from 2003 increase
+coord2003 <- read.csv("~/Dropbox/oil_envr/data/codes/increases/2003/final2003options.csv")
+
+# Massage the data to only contain the accession codes we want, and then to only contain the codes we do not want. 
+coord2003a <- coord2003 %>%
+  slice(c(3,9,7,28,43,44))
+coord2003a$year <- "2003"
+coord2003a$color <- "blue"
+coord2003b <- coord2003 %>%
+  slice(-c(3,9,7,28,43,44))
+coord2003b$year <- "2003 alternates"
+coord2003b$color <- "grey"
+```
+
+```{r}
+# Read in accession codes from 2001 increase
+coord2001 <- read.csv("~/Dropbox/oil_envr/data/codes/increases/2001/final_2001_options.csv")
+
+# Massage the data to only contain the accession codes we want, and then to only contain the codes we do not want
+coord2001a <- coord2001 %>%
+  slice(c(39,40,67,68,71,72))
+coord2001a$year <- "2001"
+coord2001a$color <- "red"
+coord2001b <- coord2001 %>%
+  slice(-c(39,40,67,68,71,72))
+coord2001b$year <- "2001 alternates"
+coord2001b$color <- "grey"
+```
+
+```{r}
+# Read in accession codes from 2000 increase
+coord2000 <- read.csv("~/Dropbox/oil_envr/data/codes/increases/2000/final_2000_accessions.csv")
+
+#Massage the data to only contain the accession codes we want, and then to only contain the codes we do not want. 
+coord2000a <- coord2000 %>%
+  slice(c(85,87,88,92,93))
+coord2000a$year <- "2000"
+coord2000a$color <- "green"
+coord2000b <- coord2000 %>%
+  slice(-c(85,87,88,92,93))
+coord2000b$year <- "2000 alternates"
+coord2000b$color <- "grey"
+
+```
+
+```{r}
+# Read in accession codes from 2004 increase 
+coord2004 <- read.csv("~/Dropbox/oil_envr/data/codes/increases/2004/final_2004_increases.csv")
+
+#Massage the data to only contain the accession codes we want, and then to only contain the codes we do not want
+coord2004a <- coord2004 %>%
+  slice(c(1,2,10,15,12))
+coord2004a$year <- "2004"
+coord2004a$color <- "yellow"
+coord2004b <- coord2004 %>%
+  slice(-c(1,2,10,15,12))
+coord2004b$year <- "2004 alternates"
+coord2004b$color <- "grey"
+
+#Create data frame with all coordinates and add factor to specify year
+allCoordinatesSel <- rbind(coord2003a, coord2001a, coord2000a, coord2004a)
+allCoordinatesNotSel <- rbind(coord2003b, coord2001b, coord2000b, coord2004b)
+# This is how you would add the year to the column if you had not already had a file with all of it sorted: allCoordinates$year <- c(rep("2000", 97), rep("2001", 77), rep("2003", 51), rep("2004", 16))
+```
+
+```{r}
+#Now let's add a column to the coordinates selected called "lat_group" and assign each accession as H, M, or L
+allCoordinatesSel$lat_group <- c("L", "L", "M", "M", "H", "H", "L", "L", "H", "H", "M", "M", "H", "M", "M", "L", "L", "L", "L", "M", "M", "H")
+
+#Remove color column
+allCoordinatesSel$color <- NULL
+
+#And save the dataframe 
+setwd("~/Dropbox/oil_envr/methods/purchases/seed_order")
+write.table(allCoordinatesSel, file = "h_annuus_acc", sep = "\t", quote = F)
+
+```
+
+```{r}
+# Create a map with all of the accessions we want to order, coded both by color (for year) and by shape (for lat group)
+NAmap0 <- NAmap + geom_point(data = allCoordinatesSel, aes (x =lon, y =lat, color = year, shape = lat_group), size =3)
+NAmap0
+```
+
+```{r}
+#Save the map
+ggsave("7_23_updated_map.jpg",
+       plot = NAmap0,
+       device = "jpg",
+       width = 6,
+       height = 6,
+       units = "in",
+       dpi = 200
+       )
+```
+
+```{r}
+# Create and save a contingency table
+setwd("~/Dropbox/oil_envr/methods/purchases/seed_order")
+out <- table(allCoordinatesSel$year, allCoordinatesSel$lat_group)
+write.table(out, file = "contingency_table", sep = "\t", quote = F)
+```
+
+```{r}
+# Now, lets' plot the accessions that we want to order/not order and color code them by year all on one map.
+NAmap1 <- NAmap + geom_point(data=allCoordinatesNotSel, aes(x=lon, y=lat, shape = year), color = "grey36", size = 2.0, alpha = 0.5) + geom_point(data=allCoordinatesSel, aes(x=lon, y=lat, fill= year), shape=21, size=3)
+
+NAmap1
+
+# Now, let's plot the ones we will order separately by year 
+NAmap2 <- NAmap + geom_point(data = coord2000a, aes(x=lon, y=lat), color = "pink", size = 3.0)
+NAmap3 <- NAmap + geom_point(data = coord2001a, aes(x=lon, y=lat), color = "green", size = 3.0)
+NAmap4 <- NAmap + geom_point(data = coord2003a, aes(x=lon, y=lat), color = "blue", size = 3.0)
+NAmap5 <- NAmap + geom_point(data = coord2004a, aes(x=lon, y=lat), color = "purple", size = 3.0)
+
+# Combine them and send to object
+pout <- cowplot::plot_grid(NAmap2, NAmap3, NAmap4, NAmap5, ncol = 2, nrow = 2)
+
+# Save it
+ggsave("four_NAmaps_v0.jpg",
+       plot = pout,
+       device = "jpg",
+       width = 6,
+       height = 6,
+       units = "in",
+       dpi = 200
+       )
+
+```

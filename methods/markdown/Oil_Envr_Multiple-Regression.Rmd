@@ -1,0 +1,200 @@
+---
+title: "Oil x Envr Multiple Regression"
+author: "KCF"
+date: "4/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, eval = T, message=F}
+library(tidyverse)
+library(geoR)
+library(cowplot)
+```
+
+
+This markdown is where I'll explore various paths to fit models to analyze the correlations between oil traits and the environment.
+
+First, read in the spatial and trait data in a single file, and the genetic data.
+
+```{r}
+# Trait and spatial data
+dat <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+
+# Genomic relatedness matrix
+G <- read.table("~/Dropbox/oil_envr/results/kinship/genomic_relatedness_matrix.N140.loci247.txt",T,'\t')
+
+```
+
+### Lat-Long correlation
+
+#### Response
+
+Take a look at the correlation of the spatial variables to the response. I'll do this with a simple calculation of pearson's correlations and use a spatial statistics tool, the variogram.
+
+```{r}
+# Pearson's correlations
+dat %>% 
+  select(unsat, lat, lon) %>%
+  cor()
+```
+
+There is substantial positive and negative correlation between latitiude and longitude. 
+
+##### Variogram
+
+Let's explore how the correlation between collection sites decays as a function of distance. I'll use functions from [geoR] to generate a variogram. 
+
+The data has latitude, longitude, response (the percent of unsaturated fatty acids from seeds), and spatial coordinates.
+
+```{r}
+dat %>%
+  dplyr::select(pop_code, unsat, lat, lon) %>%
+  head()
+```
+
+Calculate a variogram from the spatial data and the response using variog. The data must be converted to geoR's type. geoR doesn't like to work with duplicated coordinate data and in the oil data, each collection site was given the same lat-lons. I need to add some jitter to the lat-lon of each point
+
+```{r}
+# Add a bit of jitter
+coords <- jitterDupCoords(x = data.frame(dat$lat, dat$lon), max=0.0001)
+
+# Create an object with the pop_codes, coords, and data
+tmp <- dat %>%
+  dplyr::select(pop_code, unsat) %>%
+  mutate(lat = coords$dat.lat, lon = coords$dat.lon)
+
+# Convert data to geodata
+geodata <- as.geodata(tmp, coords.col = 3:4, data.col = 2)
+```
+
+A variogram is a function that describes the degree of dependence between data collected in a spatial field. Data from nearby sites will tend to be more similar than data from distant sites and the shape of the function is what we want to know.
+
+I'll calculate the observed first and second order variogram. The differences in order relate to how the spatial data is scaled: no scaling (1st order), polynomial scaling (2nd order).
+
+```{r, message=F}
+# Calculate the first order variogram
+variog1 <- variog(geodata = geodata, trend = "2nd")
+
+# calculate the second order variogram
+variog2 <- variog(geodata = geodata, trend = "2nd")
+
+# plot both objects
+plot.new()
+par(mfrow = c(2,1))
+plot(variog1, col="black", main = "1st order variogram")
+plot(variog2, col="blue", main = "2nd order variogram")
+
+```
+
+When you get back, go through the other steps in the guide, starting at 3 to get good parameter estimate for the semivariance ~ distance curve.
+
+##### Parameter estimates - Likelihood
+
+Try a likelihood based method for estimating parameters of the theoretical variogram.
+
+```{r}
+ml.n <- likfit(geodata, ini.cov.pars = c(1,15), nugget = 0.5)
+reml.n <- likfit(geodata, ini = c(1,15), nug = 0.5, method = "RML")
+ols.n <- variofit(variog1, ini = c(2,15), nugget=0.5, weights="equal")
+wls.n <- variofit(variog1, ini = c(2,15), nugget=0.5)
+
+# Plot the results of the models
+#pdf("obs_est_variogram_ML_method.pdf", width=4, height=5)
+plot(variog1,
+     main="Observed & Estimated variogram.")
+lines(ml.n)
+lines(reml.n, lty=2)
+lines(ols.n, lty=3)
+lines(wls.n, lty=4)
+legend(0.5, 6, legend=c("ML","REML","OLS","WLS"), lty=c(1,2,4,5), lwd=rep(1,4), cex=0.7)
+#dev.off()
+
+# best model based on visual fit
+reml.n
+```
+
+
+
+
+
+*NOT quite working*
+
+The theoretical variogram can be calculated from the data and a model. This will come in handy as we need to estimate values for parameters used in the bayesian multiple regression model we will fit. We can estimate the a model fit with a bayesian method using the `krige.bayes` function.
+
+```{r}
+mod0 <- krige.bayes(geodata = geodata,
+                    prior = prior.control(
+                      phi.prior="exponential",
+                      phi = 5),
+                    output=output.control(n.post=10000))
+
+mod1 <- krige.bayes(geodata = geodata,
+                    prior = prior.control(
+                      phi.prior="rec"),
+                    output=output.control(n.post=10000))
+
+# Extract the posterior estimates
+posterior <- mod0$posterior$sample
+posterior1 <- mod1$posterior$sample
+
+# Look at their summary
+summary(posterior1)
+
+# View the parameter estimates
+p_beta <- ggplot(posterior1, aes(beta)) +
+  geom_histogram(color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  xlab(expression(paste(beta)))
+p_sigma <- ggplot(posterior1, aes(sigmasq)) +
+  geom_histogram(color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  xlab(expression(paste(sigma^2)))
+p_phi <- ggplot(posterior1, aes(phi)) +
+  geom_histogram(color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  xlab(expression(paste(phi)))
+
+plot_grid(p_beta, p_sigma, p_phi, ncol = 1)
+
+```
+
+Use these estimates to plot the predicted shape of the variogram against the observed.
+
+*This is all working correctly, I just haven't specied the phi prior correctly (i think)*
+
+```{r}
+plot(variog1)
+lines(mod1,  summ = median)
+lines(mod1, max.dist = 1.2, summ = median, lty = 2)
+lines(mod1, max.dist = 1.2, summ = "mode", post="par",lwd = 2, lty = 2)
+legend(0.25, 0.4, legend = c("variogram posterior mean", "variogram posterior median", "parameters posterior mode"), lty = c(1,2,2), lwd = c(1,1,2), cex = 0.8)
+	
+
+```
+
+
+
+#### Predictors
+
+Latitude and longitude and are correlated to all of the of environmental traits to some degree. Let's get an understanding for how much correlation is present between the dependent variables in our model.
+
+```{r}
+# Remove character factors from the data
+df <- dat[,-c(1:7,29:32)]
+
+# Calculate the correlation matrix
+corr<- cor(df)
+
+# Plot it
+ggcorrplot::ggcorrplot(corr, type="upper", hc.order = FALSE, 
+                       lab = TRUE, lab_size = 2)
+```
+
+We see that the correlations between latitude and temperature traits (bio1 to bio11) are very strong, and longitude is correlated with precipitation traits. This presents a challenging framework for fitting a spatial model.
+
+
+

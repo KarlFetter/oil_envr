@@ -1,0 +1,44 @@
+---
+title: "Thermal Time Model in seedr"
+author: "Natalie Dietz"
+date: "7/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(seedr)
+library(tidyverse)
+```
+#### Load in the data
+```{r}
+dat1 <- read.table("/Users/nataliedietz/Dropbox/oil_envr/methods/germination/thermal_time_model/thermal_time_df.txt", header = T, sep = "\t")
+```
+#### Massage the data 
+```{r}
+dat <- dat1  %>%
+  slice(-c(10,11)) %>%
+  select(-code, -notes, -TP_11, -TP_12, -TP_13, -TP_14, 
+         -TP_15, -TP_16, -TP_17, -TP_18, -TP_19, -TP_20, -TP_21, -TP_22, -TP_23, -TP_24) %>%
+  pivot_longer(
+    cols = paste("TP", 01:10, sep="_"),
+    names_to = "time_point",
+    values_to = "germ_count"
+  ) %>%
+  mutate(germ_perc = germ_count/ N_seeds, 
+         sand1 = ifelse(sand == 0, "no", "yes"), 
+         parafilm1 = ifelse(parafilm == 0, "no", "yes"),
+         treatment = paste(time_point, sand1, parafilm1, sep="_"),
+         treatment1 = paste(sand1, parafilm1, sep="_")
+         ) %>%
+  group_by(treatment) %>%
+  filter(treatment1 == "no_no")
+dat$germinated <- c("0", "2", "3", "0", "0", "0", "1", "0", "0", "0", "0", "2", "6", "2", "1", "0", "0", "0", "0", "0", "0", "3", "1", "3", "0", "0", "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "1", "1", "0", "2", "2", "0", "0", "0", "0", "0", "2", "1", "3", "0", "3", "0", "0", "0", "0", "0", "0", "1", "4", "2", "2", "0")
+dat$times <- c(rep(1:10, 9))
+```
+#### Now I will transform the data into a physiodata object and summarize it 
+```{r}
+dat2 <- physiodata(d = dat, t = "times", x = "temp", g = "germinated", pg = "N_seeds", group = "treatment1")
+summary(dat2)
+```
+

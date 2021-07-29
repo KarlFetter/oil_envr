@@ -1,0 +1,1566 @@
+---
+title: "Oil x Envr Branch 07/01/21"
+author: "KCF"
+date: "07/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(brms)
+library(ggridges)
+library(cowplot)
+library(AGHmatrix)
+```
+
+# Qst-Fst
+
+Perfrom the Qst-Fst analyses for each FAME seperately.
+
+## Prep data
+
+```{r, eval = TRUE}
+# Read in the data
+dat0 <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
+
+# Read in the blocking effects
+block <- read.table("~/Dropbox/oil_envr/data/block_effects/blocks.txt",T,'\t')
+
+# Add the blocking effects
+dat <- merge(dat0, block, by = "ind_code")
+
+# Read in the snps as diploid, biallelic data
+snps <- read.table("~/Dropbox/oil_envr/data/snps/snps.custom.genpop.txt",T,'\t')
+
+```
+
+View the overlap of genotypes with trait data.
+
+```{R, eval = TRUE}
+l <- list(snps$ind_code, dat$ind_code)
+names(l) <- c("genotypes", "traits")
+overlap <- gplots::venn(l)
+```
+
+There are 140 individuals with trait and sequence data, 146 with only sequence data, and 13 with only trait data.
+
+#### Subset individuals
+
+We have genotype data for 286 individuals and trait data for 153, and 140 inds have both snps and trait data. Subset genotypes and phenotypes for the common set.
+
+```{R, eval=T, message=F}
+# List of inds to keep
+keep <- attr(overlap,"intersections")$`genotypes:traits`
+
+# Filter for snps
+snps1 <- snps %>% 
+  filter(ind_code %in% keep) %>%
+  arrange(ind_code)
+
+# filter for phenotypes
+dat1 <- dat %>% 
+  filter(ind_code %in% keep) %>%
+  arrange(ind_code)
+
+```
+
+#### Build a relatedness matrix
+
+Build a kinship matrix using the `Gmatrix` function from AGHmatrix. For details see `https://pubmed.ncbi.nlm.nih.gov/27902800/`. The first issue is filter the SNPs for the sites under selection according to McAseey. The Fst statistic is ideally built from neutral sites. Since, Ed already conducted an analyses with the SNPs to identify sites under selection, we should remove the 8 sites that show evidence of selection. See McAssey et al. 2016 for more details on the selection scan.
+
+The second issue is I need to convert the data from it's current format to 0, 1, 2, which is what Gmatrix expects. This can be done with tidyverse.
+
+```{r, eval = T}
+# SNPs under selection to remove.
+## It's not clear how to connect the results from McAssey to 
+## the locus names as I have them.
+## I attempted to find the loci with the HA genome browswer to no avail.
+
+## For now, just use all the snps. 
+## If you don't get significance from the Qst-Fst differences, you can
+## talk to ed and see if he can help you figure out which 8 loci to 
+## remove. Otherwise, continue
+
+# Convert the genotypes into 012 format
+snps_agh <- snps1 %>%
+  select(-ind_code) %>%
+  mutate_all(
+    funs(case_when(
+      . == 11 ~ 0,
+      . == 12 ~ 1,
+      . == 21 ~ 1,
+      . == 22 ~ 2
+    ))
+  )
+
+# Replace missing sites with -9
+snps_agh[is.na(snps_agh)] <- -9
+```
+
+I'll compute the genomic relatedness matrix based on VanRaden (2009) (which seems to be more popular - not sure why yet). Figure out how this works. 
+
+```{r, eval = T,  message=F}
+# Computing the additive relationship matrix based on VanRaden 2008
+G <- Gmatrix(SNPmatrix = as.matrix(snps_agh), missingValue=-9, 
+                  maf=0.05, method="VanRaden")
+
+# Set the row names 
+row.names(G) <- snps1$ind_code
+
+```
+
+### Plot Kinship matrix
+
+```{r}
+
+# View the kinship matrix & save it
+# The names need fixing up, (or turn them off & use population labels.)
+heatmap(G)
+
+# View a histogram of the self-variance components (the diagonal)
+h0 <- ggplot(data.frame(V1=diag(G)), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Self-variances of A")
+
+# View a histogram of the variance estimates.
+h1 <- ggplot(data.frame(V1=G[upper.tri(G)]), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Covariances of A")
+
+# Absolute value of covariance estimates
+h2 <- ggplot(data.frame(V1=abs(G[upper.tri(G)])), aes(x=V1))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x="Absolute value of covariances of A")
+
+# plot them together & save
+pout <- cowplot::plot_grid(h0, h1, h2, ncol = 1, nrow = 3)
+pout
+
+#setwd("/Users/kf/Dropbox/oil_envr/results/kinship/figs")
+#cowplot::save_plot(
+#  filename = "Variance-Covariance_histograms_N140_v1.pdf",
+#  plot = pout,
+#  ncol = 1,
+#  nrow = 1,
+#  base_height = 6,
+#  base_asp = 0.55,
+#  base_width = NULL
+#  )
+
+# Combine the kinship matrix and the histograms into a single plot.
+# You'll need to remake the kinship matrix with a ggplot2 function to combine
+p0 <- cowplot::as_grob(gplots::heatmap.2(G, dendrogram = 'none', 
+                        Rowv=TRUE, Colv=TRUE, trace='none',
+                        key = FALSE))
+
+
+# I think I need to make it in ggplot2 in order for it to work...
+# This is relatively unimportant, work on it later
+
+```
+
+
+
+
+
+## Qst Models
+
+### Saturated fatty acids
+
+Fit models with unsaturated fatty acids as the response. This combines the proprotions of linoleic and oleic acid.
+
+#### mod2
+
+```{r}
+qst_unsat_mod2 <- brm(unsat ~ (1|block) + (1|deme) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+
+save(qst_pal_mod2, file="/home/kf/Dropbox/oil_envr/results/qst/brms/unsat/qst_unsat_mod2.brms")
+```
+
+### Palmitic acid 16:0
+
+Palmitic acid is a saturated fatty acid with Carbon:Double bond ratio (C:D) of 16:0.
+
+##### mod0 
+
+Mod0: ind_code as grouping effect, block and deme as population effects
+
+```{r, eval=FALSE}
+library(brms)
+qst_pal_mod0 <- brm(Pal ~ block + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_pal_mod0, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod0.brms")
+
+```
+
+##### mod1
+
+Mod1: block + ind_code as grouping effects, deme as population effect
+
+```{r, eval=FALSE}
+qst_pal_mod1 <- brm(Pal ~ (1|block) + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_pal_mod1, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod1.brms")
+```
+
+##### mod2
+
+Mod2: deme + block + ind_code as grouping effects seperately.
+
+```{r, eval=FALSE, warning=F, message=F}
+qst_pal_mod2 <- brm(Pal ~ (1|block) + (1|deme) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+
+save(qst_pal_mod2, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod2.brms")
+
+```
+
+##### mod3
+
+Mod3: deme correlated to ind_code. Random intercept for deme with fixed slope.
+
+```{r, eval=F, message=F}
+qst_mod3 <- brm(unsat ~ block + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_mod3, file="~/Dropbox/oil_envr/results/brms/models/qst/qst_mod3.brms")
+```
+
+#### mod4
+Mod4: block as group and deme correlated to ind_code
+
+```{r}
+qst_pal_mod4 <- brm(Pal ~ (1|block) + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000)
+            add_criterion("loo", reloo = TRUE)
+save(qst_mod4, file="~/Dropbox/oil_envr/results/qst/brms/Pal/pal_qst_mod4.brms")
+
+```
+
+#### mod5
+
+Mod5: ind nested within block, deme as fixed effect
+
+```{r, eval = F}
+qst_pal_mod5 <- brm(Pal ~ deme + (1 + block|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.95),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_pal_mod5, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod5.brms")
+
+```
+
+#### mod6
+
+Mod6: ind nested within block, deme as grouping effect with varying slope and intercept.
+
+```{r}
+qst_pal_mod6 <- brm(Pal ~ (1|deme) + (1 + block|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_pal_mod6, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod6.brms")
+
+```
+
+#### mod7
+
+Mod7: the variance of ind is correlate to deme, and is nested within it. Block as a separate grouping effect.
+
+```{r}
+qst_pal_mod7 <- brm(Pal ~ (1|block) + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.95),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_pal_mod7, file="/home/kf/Dropbox/oil_envr/results/qst/brms/Pal/qst_pal_mod7.brms")
+
+```
+
+### Stearic Acid 18:0
+
+#### mod1
+
+Mod1: block + ind_code as grouping effects, deme as population effect
+
+```{r, eval=FALSE}
+qst_ste_mod1 <- brm(Ste ~ deme + (1|block) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.9),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_pal_mod1, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod1.brms")
+
+```
+
+#### mod6
+
+Mod6: ind nested within block, deme as grouping effect with varying slope and intercept.
+
+```{r}
+qst_ste_mod6 <- brm(Ste ~ (1|deme) + (1 + block|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_ste_mod6, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod6.brms")
+
+```
+
+
+### Oleic Acid 18:1
+
+#### mod1
+
+Mod1: block + ind_code as grouping effects, deme as population effect
+
+```{r, eval=FALSE}
+qst_ole_mod1 <- brm(ol ~ deme + (1|block) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.9),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_ole_mod1, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod1.brms")
+
+```
+
+
+#### mod2
+
+Mod2: each effect has varying intercept and slope (i.e. group effect).
+
+```{r, eval = F}
+qst_ole_mod2 <- brm(ol ~ (1|deme) + (1|block) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_ole_mod2, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod2.brms")
+
+```
+
+#### mod5
+
+Mod5: ind nested within block, deme as fixed effect with varying intercept.
+
+```{r, eval = F}
+qst_ole_mod2 <- brm(ol ~ deme + (1 + block | gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_ole_mod2, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod2.brms")
+
+```
+
+#### mod6
+
+Mod6: ind nested within block, deme as grouping effect with varying slope and intercept.
+
+```{r, eval = F}
+qst_ole_mod6 <- brm(ol ~ (1|deme) + (1 + block|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_ole_mod6, file="/home/kf/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod6.brms")
+
+```
+
+### Linoleic Acid 18:2
+
+#### mod0
+
+Mod0: ind_code as grouping effect, block and deme as population effects
+
+```{r, eval=FALSE}
+qst_lin_mod0 <- brm(lin ~ block + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.95),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_lin_mod0, file="/home/kf/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod0.brms")
+
+```
+
+
+#### mod1
+
+Mod1: block + ind_code as grouping effects, deme as population effect
+
+```{r, eval=FALSE}
+qst_lin_mod1 <- brm(lin ~ deme + (1|block) + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.95),
+                seed = 2398, chains = 4L, iter = 6000) %>%
+            add_criterion("loo", reloo = TRUE)
+                
+save(qst_lin_mod1, file="/home/kf/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod1.brms")
+
+```
+
+#### mod6
+
+Mod6: ind nested within block, deme as grouping effect with varying slope and intercept.
+
+```{r}
+qst_lin_mod6 <- brm(lin ~ (1|deme) + (1 + block|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.99),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_lin_mod6, file="~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod6.brms")
+
+```
+
+#### mod7
+
+Mod7: the variance of ind is correlate to deme, and is nested within it. Block as a separate grouping effect.
+
+```{r}
+qst_lin_mod7 <- brm(lin ~ (1|block) + (1 + deme|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                control = list(max_treedepth = 15, adapt_delta = 0.95),
+                seed = 2398, chains = 4L, iter = 6000) %>% 
+  add_criterion("loo", reloo = TRUE)
+
+save(qst_lin_mod7, file="/home/kf/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod7.brms")
+
+```
+
+## Model comparisons
+
+Which model is the best to use? Conceptually I prefer mod1, where deme is fixed and block is random. Compare the models for linoleic acid, where you have several fitted.
+
+### LOO
+
+```{r}
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod0.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod5.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod7.brms")
+
+loo_compare(qst_lin_mod0, qst_lin_mod1, qst_lin_mod2, 
+            qst_lin_mod5, qst_lin_mod6, qst_lin_mod7)
+
+pmod0 <- pp_check(qst_lin_mod0, type = "dens_overlay")
+pmod1 <- pp_check(qst_lin_mod1, type = "dens_overlay")
+pmod2 <- pp_check(qst_lin_mod2, type = "dens_overlay")
+pmod5 <- pp_check(qst_lin_mod5, type = "dens_overlay")
+pmod6 <- pp_check(qst_lin_mod6, type = "dens_overlay")
+pmod7 <- pp_check(qst_lin_mod7, type = "dens_overlay")
+
+cowplot::plot_grid(pmod0, pmod1, pmod2, pmod5, pmod6, pmod7,
+                   ncol = 3, nrow = 2)
+#
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod0.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod5.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod7.brms")
+
+loo_compare(qst_pal_mod0, qst_pal_mod1, qst_pal_mod2,  qst_pal_mod6, qst_pal_mod7)
+```
+
+### Bayes R2
+
+```{r}
+# Calculate the R2's
+R2_mod0 <- loo_R2(qst_lin_mod0)
+R2_mod1 <- loo_R2(qst_lin_mod1)
+R2_mod2 <- loo_R2(qst_lin_mod2)
+R2_mod5 <- loo_R2(qst_lin_mod5)
+R2_mod6 <- loo_R2(qst_lin_mod6)
+R2_mod7 <- loo_R2(qst_lin_mod7)
+
+# Send the estiamtes to a single object
+R2 <- data.frame(
+  model = c("qst_lin_mod0", "qst_lin_mod1", "qst_lin_mod2", 
+            "qst_lin_mod5", "qst_lin_mod6", "qst_lin_mod7"),
+  estimate = c(R2_mod0[1], R2_mod1[1], R2_mod2[1], R2_mod5[1], R2_mod6[1], R2_mod7[1]),
+  Q2.5 = c(R2_mod0[3], R2_mod1[3], R2_mod2[3], R2_mod5[3], R2_mod6[3], R2_mod7[3]),
+  Q97.5 = c(R2_mod0[4], R2_mod1[4], R2_mod2[4], R2_mod5[4], R2_mod6[4], R2_mod7[4])
+)
+
+# Plot the estimate and its upper and lower boundaries
+pr2 <-ggplot(R2, aes(x=model, y=estimate)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.35) +
+  theme_minimal() + 
+  theme(axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+        axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid')) +
+  labs(y=expression("Bayesian R"^2), x="", title="Linoleic Acid (18:2)") +
+  ylim(0,1) + 
+  geom_text(aes(label = round(estimate,3)), nudge_x = 0.27)
+
+```
+
+## Qst Estimation
+
+### Extract Variance & Calculate Qst
+
+Come back here and write up a description of what the qst formula is and what you're doing here. This will come in handy when you need a refresher.
+
+#### Mod1*
+
+Here's the correct way to estimate qst. The 'sd_ind_code__Intercept' represents the a quarter of the additive genetic variance. To get the total Va, it must be multiplied by four. The random effects are the breeding values, which are the additive effects of an individuals alleles. Hence, the random effects are a quarter of the additive genetic variance.
+
+```{r, eval  T, message=F, warning=F}
+# Load fits
+load("~/Dropbox/oil_envr/results/qst/brms/unsat/qst_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod1.brms")
+
+# Pull out posterior variance components
+# Square the variance components and calculate qst
+vc_unsat_mod1 <- qst_unsat_mod1 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__Intercept) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod1 <- qst_pal_mod1 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__Intercept) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ste_mod1 <- qst_ste_mod1 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__Intercept) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ole_mod1 <- qst_ole_mod1 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__Intercept) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_lin_mod1 <- qst_lin_mod1 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__Intercept) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + 2*sd_ind_code__Intercept^2)
+)
+
+```
+
+
+#### Mod1
+
+```{r, eval  T, message=F, warning=F}
+# Load fits
+load("~/Dropbox/oil_envr/results/qst/brms/unsat/qst_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod1.brms")
+
+# Pull out posterior variance components
+# Square the variance components and calculate qst
+vc_unsat_mod1 <- qst_unsat_mod1 %>%
+  posterior_samples() %>%
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod1 <- qst_pal_mod1 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ste_mod1 <- qst_ste_mod1 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ole_mod1 <- qst_ole_mod1 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_lin_mod1 <- qst_lin_mod1 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+```
+
+
+
+#### Mod2
+
+```{r, eval  T, message=F, warning=F}
+# Load fits
+load("~/Dropbox/oil_envr/results/qst/brms/unsat/qst_unsat_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod2.brms")
+
+# Pull out posterior variance components
+# Square the variance components and calculate qst
+vc_unsat_mod2 <- qst_unsat_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod2 <- qst_pal_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ste_mod2 <- qst_ste_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ole_mod2 <- qst_ole_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_lin_mod2 <- qst_lin_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+```
+
+#### Mod6
+
+```{r, eval  T, message=F, warning=F}
+# Load fits
+#load("~/Dropbox/oil_envr/results/qst/brms/unsat/qst_unsat_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/pal/qst_pal_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ste/qst_ste_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/ole/qst_ole_mod6.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/lin/qst_lin_mod6.brms")
+
+# Pull out posterior variance components
+# Square the variance components and calculate qst
+vc_unsat_mod6 <- qst_unsat_mod6 %>%
+  posterior_samples() %>%
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod6 <- qst_pal_mod6 %>%
+  posterior_samples() %>% 
+  select(b_demesouth, sd_ind_code__block, 
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_ind_code__block^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_ste_mod6 <- qst_ste_mod6 %>%
+  posterior_samples() %>% names() %>% head()
+  select(b_demesouth, sd_ind_code__block, 
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_ind_code__block^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod6 <- qst_pal_mod6 %>%
+  posterior_samples() %>% 
+  select(b_demesouth, sd_ind_code__block, 
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_ind_code__block^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_pal_mod6 <- qst_pal_mod6 %>%
+  posterior_samples() %>% 
+  select(b_demesouth, sd_ind_code__block, 
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_ind_code__block^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+```
+
+#### All mods for Lin
+
+```{r}
+vc_lin_mod1 <- qst_lin_mod1 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, b_demesouth,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_lin_mod2 <- qst_lin_mod2 %>%
+  posterior_samples() %>% 
+  select(sd_block__Intercept, sd_deme__Intercept,
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = sd_deme__Intercept^2 / 
+    (sd_deme__Intercept^2 + sd_block__Intercept^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+
+vc_lin_mod6 <- qst_lin_mod6 %>%
+  posterior_samples() %>%
+  select(b_demesouth, sd_ind_code__block, 
+         sd_ind_code__Intercept, sigma) %>%
+mutate(qst = b_demesouth^2 / 
+    (b_demesouth^2 + sd_ind_code__block^2 + 
+       sigma^2 + 2*sd_ind_code__Intercept^2)
+)
+```
+
+
+### Plot Qst estimates
+
+#### Mod1
+
+```{r, eval = T}
+# unsat 
+punsat <- ggplot(vc_unsat_mod1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Total unsaturated FAME") +
+  xlim(0,1) +
+  theme(title = element_text(size = 10))
+
+# palmitic 
+ppal <- ggplot(vc_pal_mod1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Palmitic acid (16:0)") +
+  xlim(0,1)
+
+# stearic 
+pste <- ggplot(vc_ste_mod1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Stearic acid (18:0)") +
+  xlim(0,1)
+
+# oleic 
+pole <- ggplot(vc_ole_mod1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Oleic acid (18:1)") +
+  xlim(0,1)
+
+# linoleic 
+plin <- ggplot(vc_lin_mod1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Linoleic acid (18:2)") +
+  xlim(0,1)
+
+# Use a trick to get a label for all the plots
+pmod1_out <- plot_grid(
+  plot_grid(NA, 
+            plot_grid(punsat, ppal, pste, pole, plin, ncol = 3, nrow = 2, 
+                      labels = "", label_size = 12, hjust = -2.5,
+                      label_fontface = "plain",
+                      scale = 0.95), 
+  nrow = 2, ncol = 1, rel_heights = c(0.05, 0.95), labels=c("Mod1 output", "")
+  
+  )
+)
+
+ggsave("qst_est_mod1_output_v1.pdf",
+       pmod1_out,
+       path = "~/Dropbox/oil_envr/results/qst/figs/",
+       width = 7.5,
+       height = 5.5,
+       units = "in")
+
+```
+
+What a surprising result!
+
+#### Mod2
+
+```{r}
+# unsat 
+punsat <- ggplot(vc_unsat_mod2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Total unsaturated fatty aicds (mod2)") +
+  xlim(0,1)
+
+# palmitic 
+ppal <- ggplot(vc_pal_mod2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Palmitic acid 16:0 (mod2)") +
+  xlim(0,1)
+
+# stearic 
+pste <- ggplot(vc_ste_mod2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Stearic acid 18:0 (mod2)") +
+  xlim(0,1)
+
+# oleic 
+pole <- ggplot(vc_ole_mod2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Oleic acid 18:1 (mod2)") +
+  xlim(0,1)
+
+# linoleic 
+plin <- ggplot(vc_lin_mod2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_light() +
+  labs(y="", x=expression(italic(Q)[ST]), title="Linoleic acid 18:2 (mod2)") +
+  xlim(0,1)
+
+cowplot::plot_grid(punsat, ppal, pste, pole, plin, ncol = 3, nrow = 2, labels = "AUTO")
+
+```
+
+##### View Qst jointly
+
+```{r}
+# Histograms in a single plot
+phist <- cowplot::plot_grid(pqst0, pqst1, pqst2, pqst3, pqst4, ncol=3)
+ggsave("qst_histograms.pdf", phist, width=6, height = 3.5)
+
+# Histograms as a single ggridges plot
+dat <- data.frame(
+  qst = rbind(qst0, qst1, qst2, qst3, qst4),
+  model = c(rep("qst0", 12000), rep("qst1", 12000), 
+            rep("qst2", 12000), rep("qst3", 12000), rep("qst4", 12000))
+)
+
+# Load ggridges & plot
+library(ggridges)
+phist1 <- ggplot(dat, aes(x=qst, y=model)) + 
+  geom_density_ridges(rel_min_height = 0.01,
+                      quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975), 
+                      alpha = 0.7) +
+  labs(x=expression(italic(Q)[ST]))
+
+ggsave("qst_ridges_v0.pdf", phist1, width=6, height=6)
+
+```
+
+
+# FAME Distributions
+
+A surprising result from mod1. The saturated fatty acids are under spatial selection, but the unsaturated are not, contrary to our hypothesis. We need an understanding for how the values are distributed across 
+
+# QstFstComp
+
+In order to robustly defend the brms models, I should also estmiate Qst-Fst using an established method: QstFstComp.
+
+## ARCHIVE
+
+##### Evaluate model fits
+
+Read in the models if they aren't in memory.
+
+```{R, eval = T, echo=F}
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod0.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod1.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod2.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod3.brms")
+load("~/Dropbox/oil_envr/results/qst/brms/qst_mod4.brms")
+```
+
+##### Leave-one out cross-validation
+
+What exactly is going on here? I need to read it and write something here to explain it to myself. 
+
+```{R}
+# Compare best fit with loo
+loo_compare(qst_mod0, qst_mod1, qst_mod2, qst_mod3, qst_mod4)
+
+
+#
+
+qst_mod0_loo <- loo(qst_mod0)
+qst_mod1_loo <- loo(qst_mod1)
+qst_mod2_loo <- loo(qst_mod2)
+qst_mod3_loo <- loo(qst_mod3)
+qst_mod4_loo <- loo(qst_mod4)
+
+lpd_point <- cbind(
+  qst_mod0_loo$pointwise[,"elpd_loo"],
+  qst_mod1_loo$pointwise[,"elpd_loo"],
+  qst_mod2_loo$pointwise[,"elpd_loo"],
+  qst_mod3_loo$pointwise[,"elpd_loo"],
+  qst_mod4_loo$pointwise[,"elpd_loo"]
+)
+
+```
+
+##### Other loo_compare methods
+
+Compare the models with other goodness of fit tests.
+
+
+##### Bayesian R2 
+
+Calculate the Bayesian R2 for each model. The higher R2 is favored.
+
+```{r}
+# Calculate the R2's
+R2_mod0 <- loo_R2(qst_mod0)
+R2_mod1 <- loo_R2(qst_mod1)
+R2_mod2 <- loo_R2(qst_mod2)
+R2_mod3 <- loo_R2(qst_mod3)
+R2_mod4 <- loo_R2(qst_mod4)
+
+# Send the estiamtes to a single object
+R2 <- data.frame(
+  model = c("qst_mod0", "qst_mod1", "qst_mod2", "qst_mod3", "qst_mod4"),
+  estimate = c(R2_mod0[1], R2_mod1[1], R2_mod2[1], R2_mod3[1], R2_mod4[1]),
+  Q2.5 = c(R2_mod0[3], R2_mod1[3], R2_mod2[3], R2_mod3[3], R2_mod4[3]),
+  Q97.5 = c(R2_mod0[4], R2_mod1[4], R2_mod2[4], R2_mod3[4], R2_mod4[4])
+)
+
+# Plot the estimate and its upper and lower boundaries
+pr2 <-ggplot(R2, aes(x=model, y=estimate)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.35) +
+  theme_minimal() + 
+  theme(axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+        axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid')) +
+  labs(y=expression("Bayesian R"^2), x="") +
+  ylim(0,1) + 
+  geom_text(aes(label = round(estimate,3)), nudge_x = 0.27)
+
+ggsave("qst_models_r2_v0.pdf", plot=pr2, width = 6, height = 3)
+```
+
+#### Estimate Qst
+
+Qst is the proportion of additive genetic variance among populations to the total phenotypic variation. Since we fit a bayesian model, we have posterior samples to work with to estimate the median and confidence intervals of the median. I'll estiamte Qst for each of the four models and plot their distributions.
+
+##### Fit 1 
+
+```{R, eval = F, echo = T}
+out0 <- qst_mod0 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_block, b_demesouth, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst0 = data.frame(qst = 
+                    out0$b_demesouth^2 / 
+                    (out0$b_demesouth^2 + out0$b_block^2 + 
+                       out0$sigma^2 + 2 * out0$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst0 <- ggplot(qst0, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod0") +
+  xlim(0,1)
+
+```
+
+##### Fit 2 
+
+```{R, eval = F, echo = T}
+out1 <- qst_mod1 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_demesouth, sd_block__Intercept, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst1 = data.frame(qst = 
+                    out1$b_demesouth^2 / 
+                    (out1$b_demesouth^2 + out1$sd_block__Intercept^2 + 
+                       out1$sigma^2 + 2 * out1$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst1 <- ggplot(qst1, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod1") +
+  xlim(0,1)
+
+```
+
+##### Fit 3 
+
+```{R, eval = F, echo = T}
+out2 <- qst_mod2 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, sd_block__Intercept, sd_deme__Intercept, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst2 = data.frame(qst = 
+                    out2$sd_deme__Intercept^2 / 
+                    (out2$sd_deme__Intercept^2 + out2$sd_block__Intercept^2 + 
+                       out2$sigma^2 + 2 * out2$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst2 <- ggplot(qst2, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod2") +
+  xlim(0,1)
+
+```
+
+##### Fit 4
+
+```{R, eval = F, echo = T}
+out3 <- qst_mod3 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, b_block, sd_ind_code__demesouth, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst3 = data.frame(qst = 
+                    out3$sd_ind_code__demesouth^2 / 
+                    (out3$sd_ind_code__demesouth^2 + out3$b_block^2 + 
+                       out3$sigma^2 + 2 * out3$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst3 <- ggplot(qst3, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod3") +
+  xlim(0,1)
+
+```
+
+##### Fit 5
+
+```{R, eval = F, echo = T}
+out4 <- qst_mod4 %>%
+  brms::posterior_samples() %>%
+  select(b_Intercept, sd_block__Intercept, 
+         sd_ind_code__demesouth, sd_ind_code__Intercept, sigma)
+
+
+# Calculate Qst from the correct variance components.
+qst4 = data.frame(qst = 
+                    out4$sd_ind_code__demesouth^2 / 
+                    (out4$sd_ind_code__demesouth^2 + out4$sd_block__Intercept^2 + 
+                       out4$sigma^2 + 2 * out4$sd_ind_code__Intercept^2))
+
+# plot the fit
+pqst4 <- ggplot(qst4, aes(x=qst)) + 
+  geom_histogram(bins = 30, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() +
+  labs(y="", x=expression(italic(Q)[ST]), title="qst_mod4") +
+  xlim(0,1)
+```
+
+##### View Qst jointly
+
+```{r}
+# Histograms in a single plot
+phist <- cowplot::plot_grid(pqst0, pqst1, pqst2, pqst3, pqst4, ncol=3)
+ggsave("qst_histograms.pdf", phist, width=6, height = 3.5)
+
+# Histograms as a single ggridges plot
+dat <- data.frame(
+  qst = rbind(qst0, qst1, qst2, qst3, qst4),
+  model = c(rep("qst0", 12000), rep("qst1", 12000), 
+            rep("qst2", 12000), rep("qst3", 12000), rep("qst4", 12000))
+)
+
+# Load ggridges & plot
+library(ggridges)
+phist1 <- ggplot(dat, aes(x=qst, y=model)) + 
+  geom_density_ridges(rel_min_height = 0.01,
+                      quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975), 
+                      alpha = 0.7) +
+  labs(x=expression(italic(Q)[ST]))
+
+ggsave("qst_ridges_v0.pdf", phist1, width=6, height=6)
+
+```
+
+### Qst-Fst test
+
+Calculate the Qst-Fst statistic for the posterior samples. Plot them, if 95% of samples don't overlap zero, you can conclude confidently that the trait is under spatial selection.
+
+```{r, eval = T}
+# Calculate the statistic
+qst_fst0 <- data.frame(qst = qst0) %>% mutate(stat = qst - 0.21)
+qst_fst1 <- data.frame(qst = qst1) %>% mutate(stat = qst - 0.21)
+qst_fst2 <- data.frame(qst = qst2) %>% mutate(stat = qst - 0.21)
+qst_fst3 <- data.frame(qst = qst3) %>% mutate(stat = qst - 0.21)
+qst_fst4 <- data.frame(qst = qst4) %>% mutate(stat = qst - 0.21)
+
+# Create the object for the ggridges plot
+dat1 <- data.frame(
+  stat=c(qst_fst0$stat, qst_fst1$stat, qst_fst2$stat, 
+            qst_fst3$stat, qst_fst4$stat),
+  model = c(rep("qst0", 12000), rep("qst1", 12000), 
+            rep("qst2", 12000), rep("qst3", 12000), rep("qst4", 12000))
+ )
+
+# View the Qst-Fst estimates
+phist2 <- ggplot(dat1, aes(x=stat, y=model)) + 
+  geom_density_ridges(rel_min_height = 0.01,
+                      quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975), 
+                      alpha = 0.7) +
+  labs(x=expression(paste(italic(Q)[ST] - italic(F)[ST]))) +
+  xlim(-0.3,1)
+
+ggsave("qst-fst_ridges_v0.pdf", phist2, width=6, height=6)
+
+# Plot the best model as a single histogram (when you are ready)
+p0 <- ggplot(qst_fst0, aes(x=stat))  + 
+  geom_histogram(bins = 25, color="black", fill="grey", lwd=0.3) +
+  theme_minimal() + 
+  labs(x=expression(paste(italic(Q)[ST] - italic(F)[ST])))
+
+```
+
+How can I put a probability number on the question, "What's the probability that the true value of Qst-Fst is less than 0.1?"
+
+### Estimate h2
+
+Narrow-sense heritabiity estimate.
+
+```{r, eval=T}
+Va = out3$sd_ind_code__Intercept
+Vp = out0$sd_ind_code__Intercept + out0$sigma
+
+tidybayes::median_qi(Va/Vp)
+```
+
+
+## Fst estimate
+
+Ed previously estimated Fst to be 0.21 using all markers. He also performed an analysis where he identified 8 SNPs that show evidence of selection. I will estimate Fst with all SNPs and with the 8 non-neutral sites removed. I need to find a bayesian method for estimating Weir & Cockerham's Fst.
+
+```{r, eval=FALSE}
+# Load the SNP data
+
+# Estimate Fst as a two population model with multiple families.
+# In this model deme = population and family = breeding population
+
+# FinePop may be a tool I can use to do this.
+library(FinePop)
+
+
+# Use the Empirical Bayesian Estimator
+EBFST(popdata, num.iter = 100, locus = F)
+
+# Also try WC's Theta
+thetaWC.pair()
+
+```
+
+# ARCHIVE OVER
+
+# Q2: Multiple regression
+
+## Explore the Climate data
+
+Create histograms and a PCA of the climate data.
+
+```{r}
+# Read in the data and merge the ancestry data into the pheno/envr data
+dat <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+```
+
+And let's take a look at all of the climate data.
+
+```{r fig.cap = "Distribution of 19 bioclim variables", echo = F}
+# Predictors
+p0  <- ggplot(data = clim, aes(x=bio1 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p1  <- ggplot(data = clim, aes(x=bio2 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p2  <- ggplot(data = clim, aes(x=bio3 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p3  <- ggplot(data = clim, aes(x=bio4 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p4  <- ggplot(data = clim, aes(x=bio5 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p5  <- ggplot(data = clim, aes(x=bio6 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p6  <- ggplot(data = clim, aes(x=bio7 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p7  <- ggplot(data = clim, aes(x=bio8 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p8  <- ggplot(data = clim, aes(x=bio9 )) + geom_histogram() + theme(axis.title.y = element_blank())
+p9  <- ggplot(data = clim, aes(x=bio10)) + geom_histogram() + theme(axis.title.y = element_blank())
+p10 <- ggplot(data = clim, aes(x=bio11)) + geom_histogram() + theme(axis.title.y = element_blank())
+p11 <- ggplot(data = clim, aes(x=bio12)) + geom_histogram() + theme(axis.title.y = element_blank())
+p12 <- ggplot(data = clim, aes(x=bio13)) + geom_histogram() + theme(axis.title.y = element_blank())
+p13 <- ggplot(data = clim, aes(x=bio14)) + geom_histogram() + theme(axis.title.y = element_blank())
+p14 <- ggplot(data = clim, aes(x=bio15)) + geom_histogram() + theme(axis.title.y = element_blank())
+p15 <- ggplot(data = clim, aes(x=bio16)) + geom_histogram() + theme(axis.title.y = element_blank())
+p16 <- ggplot(data = clim, aes(x=bio17)) + geom_histogram() + theme(axis.title.y = element_blank())
+p17 <- ggplot(data = clim, aes(x=bio18)) + geom_histogram() + theme(axis.title.y = element_blank())
+p18 <- ggplot(data = clim, aes(x=bio19)) + geom_histogram() + theme(axis.title.y = element_blank())
+
+plot_grid(p0, p1, p2, p3, p4, p5, 
+          p6, p7, p8, p9, p10, p11,
+          p12, p13, p14, p15, p16, 
+          p17, p18, 
+          ncol = 4, nrow = 5) 
+```
+
+### Climate PCA
+
+```{r, eval=T}
+# Keep only numeric data
+clim <- dat[,-c(1:9, 29:32)]
+
+# Build the pca
+pc1 <- prcomp(clim, scale.=TRUE)
+
+library(ggfortify)
+pc_plot0 <- autoplot(pc1, data = dat, colour="deme", 
+         loadings=TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3,
+         scale = 0)
+
+# Include the unsaturated fatty acid percent
+clim1 <- dat[,-c(1:6, 8:9, 29:32)]
+pc2 <- prcomp(clim1, scale.=TRUE)
+pc_plot1 <- autoplot(pc2, data = dat, colour="deme", 
+         loadings=TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3,
+         scale=0)
+
+# arrange the three plots in a single row
+prow <- plot_grid(
+  pc_plot0 + theme(legend.position="none"),
+  pc_plot1 + theme(legend.position="none"),
+  align = 'vh',
+  labels = 'auto',
+  hjust = -1,
+  nrow = 2)
+
+# extract the legend from one of the plots
+legend <- get_legend(
+  # create some space to the left of the legend
+  pc_plot0 + theme(legend.box.margin = margin(0, 0, 0, 12))
+)
+
+# add the legend to the row we made earlier. Give it one-third of 
+# the width of one plot (via rel_widths).
+plot_grid(prow, legend, rel_widths = c(3, .4))
+
+```
+
+### Lat-Long correlation
+
+Latitude and longitude and are correlated to all of the of environmental traits to some degree. Let's get an understanding for how much correlation is present between the dependent variables in our model.
+
+```{r}
+# Remove character factors from the data
+df <- dat[,-c(1:7,29:32)]
+
+# Calculate the correlation matrix
+corr<- cor(df)
+
+# Plot it
+#pdf("corr_mat_6x6_v0.pdf", width = 6, height = 6)
+ggcorrplot::ggcorrplot(corr, type="upper", hc.order = FALSE, 
+                       lab = TRUE, lab_size = 2)
+#dev.off()
+
+```
+
+It appears there is substantial correlation between latitude and the temperature variables (bio1-bio11).
+
+### Populaiton dissimilarity matrix
+
+To account for the substantial correlation to latitude and longitude that is present in the dependent variables, I'll use a property of the sample, namely, the grouped nature of the collection effort. Latitude and longitude is a spatial structure of the sampling effort and is a nuisance parameter I need to account for. Using the collection site (i.e. pop_code) as a grouping effect with the variance-covariance matrix set as the distance matrix of the lat-longs will allow me to account for the autocorrelation between collection sites.
+
+The rational here is the sampling as an explicit spatial structure that spans a latitudinal and longitudinal gradient. To account for the spatial structure, we use collection site as a grouping effect and set the variance-covariance matrix of the sites as a square distance matrix for the collection sites.
+
+```{r}
+# Create a data.frame of the lat-long for each population
+df <- dat %>%
+  select(pop_code, lat, lon) %>% 
+  distinct(pop_code, .keep_all = TRUE) %>%
+  arrange(lat)
+
+# Create the distance matrix of the lat longs
+S <- dist(df[,-1], upper = TRUE, diag = TRUE)
+
+# Set the row names of S to the populations
+# you'll have to do it in vim, a dist object
+# won't take row or column names.
+# rownames(S) <- df[,1]
+
+#### THIS IS THE PROBLEM. YOU'RE NOT ACTUALLY WORKING WITH A MATRIX #####
+# This distance matrix object is weird and you want to have a variance-covariance matrix.
+# You'll have to figure out how to get this working.
+# The rownames are needed for model fitting
+
+```
+
+Use the distance matrix as variance covariance matrix in the model (although it isn't a vcv per se).
+
+#### This isn't working
+
+```{r, eval = F}
+# Here's my thought process here. I'm not sure it's working.
+# Get the lat-longs into a matrix
+# Set the rownmaes to the pop_codes
+# Create a distance matrix from them
+# Or a variance-covariance matrix
+#
+# The problem is that the distance matrix isn't really a
+# variance-covariance matrix, although I can force it to one.
+
+# Create a matrix of the lat-long for each population
+mat0 <- dat %>%
+  select(pop_code, lat, lon) %>% 
+  distinct(pop_code, .keep_all = TRUE) %>%
+  arrange(lat)
+
+# Convert to a matrix
+mat <- matrix(data = c(mat0[,2], mat0[,3]), ncol = 2, nrow = 14,
+              dimnames = list(row = mat0[,1], c("lat", "lon")))
+
+# Make the variance-covariance matrix.
+# # Still not what I want
+S <- vcov(lm(lat ~ lon, data = data.frame(mat)))
+
+
+
+
+```
+
+### Multiple regression
+
+*When I come back to this, consider changing the response to the additive genetic variance for the fatty acids themself, not the raw fatty acid data.*
+
+*the idea is to see how strongly the genetic variance is correlated to the environent. The environment is selecting on the additive effects genetic variance.*
+
+*Read up on this. The statement may be silly, variance is a component, not an individual thing, I think. I could fit the model on the blups.* <- it's not silly. I want to work with the breeding values. Breeding values are the effect of an individual's alleles (Isik 2017). In the model, they are (almost certianly) the random effects estimated by the model for the ind_code level. The only question is, do I need to do a bit of algebra to translate the ranef's to estimated breeding values (EBVs)
+
+
+
+
+This model will fit the unsaturated fatty acid data to the environmental variables, blocking effects, sampling site (i.e. pop_code) with the covariances set by the distance matrix, and the individual effects with the covariances set by the kinship matrix.
+
+
+```{r, eval=FALSE}
+# Center and scale the predictors to remove effects of scale
+arm::standardize(dat)
+
+z.dat <- 
+
+# Read in the G matrix
+G <- read.table("~/Dropbox/oil_envr/results/kinship/genomic_relatedness_matrix.N140.loci247.txt",T,'\t')
+
+# Read in the site distance matrix
+S <- read.table("~/Dropbox/oil_envr/results/lat-lon_corr/S",T,'\t', row.names = 1)
+
+# Fit the model
+mod3 <- brm(unsat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              block + 
+              (1|gr(pop_code, cov = S)) +
+              (1|gr(ind_code, cov = G)),
+            data = dat,
+            data2 = list(S = S, G = G),
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 10000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+# Fit the model
+mod3 <- brm(unsat ~ bio1 + bio2 + bio3 + bio4 +
+              bio5 + bio6 + bio7 + bio8 + bio9 +
+              bio10 + bio11 + bio12 + bio13 + bio14 +
+              bio15 + bio16 + bio17 + bio18 + bio19 +
+              block + lat + lon +
+              (1|pop_code) +
+              (1|gr(ind_code, cov = G)),
+            data = dat,
+            data2 = list(G = G),
+            family = "gaussian",
+            chains = 2L, seed = 2398, iter = 10000) 
+  
+  
+  
+qst_mod <- brm(sat ~ 1 + block + deme + (1|gr(ind_code, cov = G)),
+                data = dat1,
+                data2 = list(G = G),
+                family = "gaussian",
+                seed = 2398, chains = 4L, iter = 6000)
+```
+
+# Manuscript Writing Scratch
+
+Code to generate supplemental tables/figs and simple statistics for the manuscript.
+
+## Population Table
+
+Make a table of the populations with their codes, names, coords, and the sample sizes for the number of plants with trait data and the number with sequence data (and hence were included in the Qst).
+
+```{r}
+# Read in the population code file for each ind.
+# THis is the file for all inds that were included in the study. N = 286
+pop <- read.table("~/Dropbox/oil_envr/data/codes/pop_codes_N286.txt",T,'\t')
+
+# Get the list of inds used in the Qst model
+# We have trait and genotype data for 140 inds
+qst_inds <- read.table("~/Dropbox/oil_envr/results/data2go/trait_SNP_overlap_set_N140.txt",T,'\t')
+
+# Get a list of inds that you have trait data for.
+# We have trait data for 153 inds
+trait <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim.txt",T,'\t')
+
+# Get a version of the table that summarizes the number of inds per pop for the 153 with trait data
+tt <- pop %>%
+  filter(ind_code %in% trait$ind_code) %>%
+  count(usda_pop) %>%
+  left_join(pop, by = "usda_pop") %>%
+  distinct(usda_pop, .keep_all=T) %>%
+  arrange(desc(Lat)) %>%
+  select(usda_pop, pop_code, Region, Country, N=n, Lat, Lon)
+
+# Get a version of the trait table for the qst model
+qt <- pop %>%
+  filter(ind_code %in% qst_inds$ind_code) %>%
+  count(usda_pop) %>%
+  left_join(pop, by = "usda_pop") %>%
+  distinct(usda_pop, .keep_all=T) %>%
+  arrange(desc(Lat)) %>%
+  select(usda_pop, pop_code, Region, Country, N=n, Lat, Lon)
+
+# They are the same in length and number of inds per population
+
+# Save tt in latex format
+setwd("~/Dropbox/oil_envr/manuscript/tables/pop_table/")
+write.table(tt, file="population_table.txt", sep='\t', quote=F, row.names=F)
+
+
+```

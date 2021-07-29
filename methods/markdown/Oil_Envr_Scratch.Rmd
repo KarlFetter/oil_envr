@@ -141,7 +141,7 @@ write.table(out, file="oil_data_with_pop_codes_N153.txt", sep='\t', quote=F, row
 
 ## Bayesian models
 
-### Basic Moodels
+### Basic Models
 
 The first mod0 with 2 chains and 4000 iterations worked very well.
 
@@ -150,7 +150,7 @@ The first mod0 with 2 chains and 4000 iterations worked very well.
 dat <- read.table("~/Dropbox/oil_envr/data/trait/oil_bioclim_ancestry_N153.txt",T,'\t')
 
 # mod0 is the basic model that has population as a random effect
-mod0 <- brm(sat ~ bio1 + bio2 + bio3 + bio4 +
+mod0 <- brm(unsat ~ bio1 + bio2 + bio3 + bio4 +
               bio5 + bio6 + bio7 + bio8 + bio9 +
               bio10 + bio11 + bio12 + bio13 + bio14 +
               bio15 + bio16 + bio17 + bio18 + bio19 +
@@ -180,7 +180,7 @@ save(mod1, file="mod1.brms")
 
 
 
-### Advanced Moodels
+### Advanced Models
 
 The first mod0 with 2 chains and 4000 iterations worked very well. Try to improve on that simple model and tighten down on the Rhat values. First try increasing the run length significantly.
 
@@ -285,11 +285,11 @@ Forest plot of the regression coefficients
 
 ```{r echo = FALSE}
 # Get a list of terms in the model
-tp <- get_variables(mod1) %>% data.frame()
+tp <- get_variables(mod0) %>% data.frame()
 
 # Make a plot of the variables you want
 # This one is sorted by the regression estimate value
-fr0 <- mod1 %>% 
+fr0 <- mod3 %>% 
   gather_draws(
                 b_bio1,
                 b_bio2,

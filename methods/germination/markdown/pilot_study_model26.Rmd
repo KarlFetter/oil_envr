@@ -1,0 +1,86 @@
+---
+title: "pilot_study_analysis"
+author: "Natalie Dietz & Karl Fetter"
+date: "7/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lme4)
+library(tidyverse)
+library(brms)
+```
+
+# Here is the data from Table 1 of the pilot study
+
+```{r}
+dat_in <- read.table("~/Dropbox/oil_envr/methods/germination/markdown/pilot_study_full.txt", T, '\t')
+
+
+# Create germination percent
+dat <- dat_in  %>%
+  slice(-c(10,11)) %>%
+  select(-code, -notes) %>%
+  pivot_longer(
+    cols = paste("TP", 01:24, sep="_"),
+    names_to = "time_point",
+    values_to = "germ_count"
+  ) %>%
+  mutate(germ_perc = germ_count/ N_seeds, 
+         sand = ifelse(sand == 0, "no", "yes"), 
+         parafilm = ifelse(parafilm == 0, "no", "yes"),
+         temp = as.factor(temp),
+         tmp = paste(dat$sand, dat$parafilm, sep="_"),
+         treatment = ifelse(tmp == "no_no", "control", ifelse(
+           tmp == "no_yes", "parafilm", ifelse(
+             tmp=="yes_yes", "both", ifelse(tmp=="yes_no", "sand", NA)
+             )
+           )
+          )
+         )
+```
+
+
+```{r}
+# Fit with brms
+mod0 <- brm(germ_perc ~ time_point + temp + sand + parafilm + N_seed_weight_g,
+             data = dat,
+             family = "gaussian",
+             seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+# Mod1 removes the time points
+mod1 <- brm(germ_perc ~ temp + sand + parafilm + N_seed_weight_g,
+             data = dat,
+             family = "gaussian",
+             seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+# Mod1 removes the time points
+mod2 <- brm(germ_perc ~ temp + treatment + N_seed_weight_g,
+             data = dat,
+             family = "gaussian",
+             seed = 2398, chains = 4L, iter = 6000) %>%
+  add_criterion("loo", reloo = TRUE)
+
+
+#This command compares the two brms models 
+
+loo_compare(mod0, mod1)
+
+#This command checks the conditional effect, which is the effect of a variable on the response when you hold all other variables constant
+
+conditional_effects(mod0)
+
+#Interaction
+
+conditional_effects(mod00, effects = "time_point:sand1")
+ce_tp.sa <- conditional_effects(mod00, effects = "time_point:sand1")
+
+```
+
+
+
+
+
